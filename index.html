@@ -105,7 +105,7 @@
                 width: 100%; padding: 12px; font-size: 16px; 
             }
             
-            .settings-panel { flex-direction: column; gap: 15px; }
+            .settings-panel { flex-direction: column; gap: 15px; padding-bottom: 10px; }
             
             .mixer { padding: 0; border: none; min-width: 100%; margin-top: 10px; border-top: 2px solid #eee; padding-top: 15px;}
             .desktop-mixer { display: none !important; }
@@ -139,7 +139,7 @@
             .mobile-inst-row select { flex-grow: 1; padding: 8px; font-size: 14px; }
             
             /* Smaller Reset Buttons */
-            .mobile-resets { display: flex; gap: 10px; margin-top: 10px; }
+            .mobile-resets { display: flex; gap: 10px; margin-top: 10px; padding-bottom: 50px; }
             .mobile-resets button { 
                 flex: 1; padding: 8px; font-size: 12px; background: #666; 
             }
@@ -367,6 +367,11 @@
                     }
 
                     await osmd.load(xmlContent);
+                    if (window.innerWidth <= 768) {
+                        osmd.zoom = 0.6; 
+                    } else {
+                        osmd.zoom = 1.0; // Ensures desktop stays at default size
+                    }
                     osmd.render();
 
                     defaultBpm = 120; 
