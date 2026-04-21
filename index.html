@@ -17,6 +17,8 @@
         }
         
         .primary-controls { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; border-bottom: 2px solid transparent; }
+        .search-box { display: flex; gap: 8px; background: #f0f4f8; padding: 8px; border-radius: 6px; border: 1px solid #dce4ec; align-items: center; }
+        
         .settings-panel { display: flex; flex-wrap: wrap; gap: 30px; margin-top: 15px; padding-top: 15px; border-top: 2px solid #eee; overflow: hidden; transition: 0.3s; }
         .settings-panel.hidden { max-height: 0; padding-top: 0; margin-top: 0; opacity: 0; }
         
@@ -29,11 +31,39 @@
         .small-btn { padding: 4px 8px; font-size: 12px; background: #555; }
         .small-btn:hover:not(:disabled) { background: #333; }
         
-        select { padding: 6px; border-radius: 4px; border: 1px solid #ccc; width: 140px; }
+        select, .text-input { padding: 6px; border-radius: 4px; border: 1px solid #ccc; }
+        .text-input { width: 220px; }
 
-        .mixer { border-left: 2px solid #eee; padding-left: 30px; flex-grow: 1; }
-        .mixer h3 { margin-top: 0; font-size: 16px; color: #333; }
-        .mixer-row { display: grid; grid-template-columns: 1.2fr 1fr 1.5fr; align-items: center; gap: 15px; margin-bottom: 12px; font-size: 14px; border-bottom: 1px solid #f0f0f0; padding-bottom: 8px; }
+        .mixer { border-left: 2px solid #eee; padding-left: 30px; flex-grow: 1; min-width: 550px; }
+        .mixer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .mixer-header h3 { margin: 0; font-size: 16px; color: #333; }
+        .mixer-actions { display: flex; gap: 10px; }
+        
+        .mixer-row { 
+            display: grid; 
+            grid-template-columns: 80px minmax(100px, 1.2fr) 1.5fr 1.5fr 35px; 
+            align-items: center; 
+            gap: 15px; 
+            margin-bottom: 10px; 
+            font-size: 14px; 
+            border-bottom: 1px solid #f0f0f0; 
+            padding-bottom: 8px; 
+        }
+        
+        .mixer-labels {
+            font-weight: bold;
+            color: #777;
+            font-size: 12px;
+            text-transform: uppercase;
+            border-bottom: 2px solid #ddd;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+        }
+
+        .highlight-toggle-container { display: flex; justify-content: center; align-items: center; }
+        .highlight-toggle { transform: scale(1.3); cursor: pointer; }
+        .vol-slider { width: 100%; cursor: pointer; }
+        .vol-label { font-family: monospace; font-size: 12px; color: #666; text-align: right; }
 
         #osmdCanvas { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); min-height: 400px; }
     </style>
@@ -42,13 +72,18 @@
 
     <div class="dashboard">
         <div class="primary-controls">
-            <input type="file" id="fileInput" accept=".xml,.musicxml" />
+            <div class="search-box">
+                <input type="text" id="hymnSearch" class="text-input" list="hymnDatalist" placeholder="Search number or title...">
+                <datalist id="hymnDatalist"></datalist>
+                <button id="loadHymnBtn">Load Hymn</button>
+            </div>
+
             <button id="playBtn" disabled>Play</button>
             <button id="pauseBtn" disabled>Pause</button>
             <button id="stopBtn" disabled>Stop</button>
             <button id="seekBackBtn" disabled>&lt;&lt;&lt;</button>
             <button id="seekForwardBtn" disabled>&gt;&gt;&gt;</button>
-            <button id="toggleSettingsBtn">Hide Settings</button>
+            <button id="toggleSettingsBtn" style="margin-left: auto;">Hide Settings</button>
         </div>
 
         <div class="settings-panel" id="settingsPanel">
@@ -59,11 +94,7 @@
                     <span id="tempoValue" style="min-width: 30px;">120</span>
                     <button id="resetTempoBtn" class="small-btn" disabled>Reset</button>
                 </div>
-                <div class="row">
-                    <label style="font-weight: bold; width: 110px;">Highlight Voice:</label>
-                    <select id="voiceSelect" disabled><option value="none">None</option></select>
-                </div>
-                <div class="row">
+                <div class="row" style="margin-top: 10px;">
                     <label style="cursor: pointer; margin-right: 15px;"><input type="checkbox" id="loopToggle"> Loop</label>
                     <label style="cursor: pointer; margin-right: 15px;"><input type="checkbox" id="metronomeToggle"> Metronome</label>
                     <label style="cursor: pointer;"><input type="checkbox" id="autoscrollToggle" checked> Autoscroll</label>
@@ -71,8 +102,10 @@
             </div>
 
             <div class="mixer" id="mixerPanel">
-                <h3>Voice Mixer</h3>
-                <div style="color: #888; font-size: 13px;">Upload a file to begin...</div>
+                <div class="mixer-header">
+                    <h3>Voice Mixer</h3>
+                </div>
+                <div style="color: #888; font-size: 13px;" id="mixerPlaceholder">Load a hymn to begin...</div>
             </div>
         </div>
     </div>
@@ -81,7 +114,17 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const fileInput = document.getElementById('fileInput');
+            
+            // --- HYMN CATALOG ---
+            const hymnCatalog = [
+                { number: 952, title: "Brightest and Best", path: "hymns/952 Brightest and Best.musicxml" },
+                { number: 1100, title: "What Shall I Render to the Lord", path: "hymns/1100 What Shall I Render to the Lord.musicxml" },
+            ];
+
+            const hymnSearch = document.getElementById('hymnSearch');
+            const hymnDatalist = document.getElementById('hymnDatalist');
+            const loadHymnBtn = document.getElementById('loadHymnBtn');
+            
             const playBtn = document.getElementById('playBtn');
             const pauseBtn = document.getElementById('pauseBtn');
             const stopBtn = document.getElementById('stopBtn');
@@ -95,16 +138,21 @@
             const loopToggle = document.getElementById('loopToggle'); 
             const autoscrollToggle = document.getElementById('autoscrollToggle');
             const mixerPanel = document.getElementById('mixerPanel');
-            const voiceSelect = document.getElementById('voiceSelect');
             const canvas = document.getElementById('osmdCanvas');
 
-            const osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(canvas, { autoResize: true, backend: "svg" });
+            // --- OSMD INITIALIZATION ---
+            const osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(canvas, { 
+                autoResize: true, 
+                backend: "svg",
+                cursorsOptions: [{ type: 0, color: "#0066cc", alpha: 0.35, follow: true }]
+            });
 
             let synths = {}; 
             let defaultBpm = 120; 
             let measureMap = []; 
             let isFirstEvent = true; 
-            let highlightedElements = [];
+            let highlightedElements = new Set();
+            let activeHighlights = new Set(); 
 
             const patchLibrary = {
                 "Standard Synth": { oscillator: { type: "triangle" }, envelope: { attack: 0.05, decay: 0.1, sustain: 0.3, release: 1 } },
@@ -117,8 +165,14 @@
             const clickSynth = new Tone.MembraneSynth({ pitchDecay: 0, envelope: { attack: 0, decay: 0.02, sustain: 0 } }).toDestination();
             clickSynth.volume.value = -10;
 
-            // --- UI HANDLERS ---
+            // --- INITIALIZE UI ---
+            hymnCatalog.forEach(hymn => {
+                const option = document.createElement('option');
+                option.value = `${hymn.number} - ${hymn.title}`;
+                hymnDatalist.appendChild(option);
+            });
 
+            // --- UI HANDLERS ---
             toggleSettingsBtn.addEventListener('click', () => {
                 const isHidden = settingsPanel.classList.toggle('hidden');
                 toggleSettingsBtn.textContent = isHidden ? 'Show Settings' : 'Hide Settings';
@@ -139,13 +193,60 @@
                 Tone.Transport.bpm.value = defaultBpm;
             });
 
-            fileInput.addEventListener('change', (event) => {
-                const file = event.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = async (e) => {
-                    stopPlayback();
-                    await osmd.load(e.target.result);
+            // Load from Server
+            loadHymnBtn.addEventListener('click', async () => {
+                const query = hymnSearch.value.trim();
+                if (!query) return;
+
+                const match = hymnCatalog.find(h => 
+                    `${h.number} - ${h.title}` === query || 
+                    h.number.toString() === query ||
+                    h.title.toLowerCase() === query.toLowerCase()
+                );
+
+                if (!match) {
+                    alert("Hymn not found in catalog. Please check the spelling or number.");
+                    return;
+                }
+
+                try {
+                    const response = await fetch(match.path);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    const xmlText = await response.text();
+                    await processSheetMusic(xmlText, match);
+                } catch (error) {
+                    console.error("Error fetching hymn:", error);
+                    alert("Could not load the hymn from the server. Make sure the file exists at: " + match.path);
+                }
+            });
+
+            async function processSheetMusic(xmlContent, hymnData) {
+                stopPlayback();
+                
+                try {
+                    if (hymnData) {
+                        const parser = new DOMParser();
+                        const xmlDoc = parser.parseFromString(xmlContent, "text/xml");
+                        const newTitle = `${hymnData.number} ${hymnData.title}`;
+                        
+                        let workTitle = xmlDoc.getElementsByTagName("work-title")[0];
+                        let movementTitle = xmlDoc.getElementsByTagName("movement-title")[0];
+                        
+                        if (workTitle) {
+                            workTitle.textContent = newTitle;
+                        } else if (movementTitle) {
+                            movementTitle.textContent = newTitle;
+                        } else {
+                            const movementTitleNode = xmlDoc.createElement("movement-title");
+                            movementTitleNode.textContent = newTitle;
+                            xmlDoc.documentElement.insertBefore(movementTitleNode, xmlDoc.documentElement.firstChild);
+                        }
+                        
+                        const serializer = new XMLSerializer();
+                        xmlContent = serializer.serializeToString(xmlDoc);
+                    }
+
+                    await osmd.load(xmlContent);
                     osmd.render();
 
                     defaultBpm = 120; 
@@ -168,13 +269,17 @@
 
                     buildMixerUI(); 
                     playBtn.disabled = false;
-                    voiceSelect.disabled = false;
-                };
-                reader.readAsText(file);
-            });
+                } catch (error) {
+                    console.error("Error processing sheet music:", error);
+                    alert("There was an error rendering the XML data.");
+                }
+            }
 
             playBtn.addEventListener('click', async () => {
                 await Tone.start();
+                
+                Tone.getDestination().volume.value = -12; 
+
                 if (prepareAudioEvents()) {
                     Tone.Transport.start("+0.1");
                     playBtn.disabled = true; 
@@ -205,16 +310,10 @@
             function seekToMeasure(targetMeasure) {
                 if (!measureMap || measureMap.length === 0) return;
                 
-                // CRITICAL FIX: Silence all currently playing synths before we jump
                 silenceSynths();
-                
-                // Clamp target index between 0 and the max measure index
                 targetMeasure = Math.max(0, Math.min(measureMap.length - 1, targetMeasure));
-
-                // Move Tone.js playback head
                 Tone.Transport.position = (measureMap[targetMeasure] || 0) + "i";
                 
-                // Move visual cursor
                 osmd.cursor.reset();
                 while (!osmd.cursor.Iterator.EndReached && osmd.cursor.Iterator.CurrentMeasureIndex < targetMeasure) {
                     osmd.cursor.next();
@@ -223,9 +322,7 @@
                 isFirstEvent = true;
                 clearHighlights();
                 
-                if (Tone.Transport.state === 'paused') {
-                    pauseBtn.textContent = 'Resume';
-                }
+                if (Tone.Transport.state === 'paused') pauseBtn.textContent = 'Resume';
             }
 
             function stopPlayback() {
@@ -244,8 +341,14 @@
             function silenceSynths() { Object.values(synths).forEach(s => s.releaseAll()); }
 
             function clearHighlights() {
-                highlightedElements.forEach(el => el.style.fill = el.dataset.originalFill || "");
-                highlightedElements = [];
+                highlightedElements.forEach(el => {
+                    // Revert our outline modifications
+                    el.style.stroke = el.dataset.originalStroke || "";
+                    el.style.strokeWidth = el.dataset.originalStrokeWidth || "";
+                    el.style.strokeLinejoin = el.dataset.originalStrokeLinejoin || "";
+                    el.style.paintOrder = el.dataset.originalPaintOrder || "";
+                });
+                highlightedElements.clear();
             }
 
             function getVoiceKey(note) {
@@ -259,9 +362,38 @@
             }
 
             function buildMixerUI() {
-                mixerPanel.innerHTML = '<h3>Voice Mixer</h3>';
-                voiceSelect.innerHTML = '<option value="none">None</option>';
+                mixerPanel.innerHTML = `
+                    <div class="mixer-header">
+                        <h3>Controls</h3>
+                        <div class="mixer-actions">
+                            <button id="clearHighlightsBtn" class="small-btn">Clear Highlights</button>
+                            <button id="resetVolBtn" class="small-btn">Reset Volumes</button>
+                        </div>
+                    </div>
+                    <div class="mixer-row mixer-labels">
+                        <span style="text-align: center;">Highlight</span>
+                        <span>Part</span>
+                        <span>Instrument</span>
+                        <span>Volume</span>
+                        <span></span>
+                    </div>
+                `;
+                
                 synths = {}; 
+                activeHighlights.clear();
+                
+                document.getElementById('clearHighlightsBtn').addEventListener('click', () => {
+                    document.querySelectorAll('.highlight-toggle').forEach(cb => cb.checked = false);
+                    activeHighlights.clear();
+                    clearHighlights(); 
+                });
+
+                document.getElementById('resetVolBtn').addEventListener('click', () => {
+                    document.querySelectorAll('.vol-slider').forEach(slider => {
+                        slider.value = 0; 
+                        slider.dispatchEvent(new Event('input')); 
+                    });
+                });
 
                 osmd.sheet.Instruments.forEach(instr => {
                     const instrName = instr.Name || `Part ${instr.Id + 1}`;
@@ -277,11 +409,26 @@
                         const labelName = voiceIds.length > 1 ? `${instrName} (V${voiceNum})` : instrName;
 
                         synths[voiceKey] = new Tone.PolySynth(Tone.Synth, patchLibrary["Standard Synth"]).toDestination();
-                        synths[voiceKey].volume.value = -8;
+                        synths[voiceKey].volume.value = 0; 
 
                         const row = document.createElement('div');
                         row.className = 'mixer-row';
-                        const label = document.createElement('span'); label.textContent = labelName;
+
+                        const highlightContainer = document.createElement('div');
+                        highlightContainer.className = 'highlight-toggle-container';
+                        const highlightCb = document.createElement('input');
+                        highlightCb.type = 'checkbox';
+                        highlightCb.className = 'highlight-toggle';
+                        highlightCb.title = "Highlight notes during playback";
+                        highlightCb.addEventListener('change', (e) => {
+                            if (e.target.checked) activeHighlights.add(voiceKey);
+                            else activeHighlights.delete(voiceKey);
+                        });
+                        highlightContainer.appendChild(highlightCb);
+
+                        const label = document.createElement('span'); 
+                        label.textContent = labelName;
+                        label.style.fontWeight = "bold";
 
                         const sel = document.createElement('select');
                         Object.keys(patchLibrary).forEach(p => {
@@ -294,17 +441,25 @@
                             synths[voiceKey].volume.value = vol;
                         });
 
+                        const volLabel = document.createElement('span');
+                        volLabel.className = 'vol-label';
+                        volLabel.textContent = "0"; 
+
                         const sld = document.createElement('input');
-                        sld.type = 'range'; sld.min = -40; sld.max = 5; sld.value = -8;
+                        sld.type = 'range'; sld.min = -30; sld.max = 10; sld.value = 0;
+                        sld.className = 'vol-slider';
                         sld.addEventListener('input', (e) => {
-                            synths[voiceKey].volume.value = e.target.value <= -40 ? -Infinity : e.target.value;
+                            const val = parseInt(e.target.value);
+                            synths[voiceKey].volume.value = val <= -30 ? -Infinity : val;
+                            volLabel.textContent = val <= -30 ? "MUTE" : `${val > 0 ? '+' : ''}${val}`;
                         });
 
-                        row.appendChild(label); row.appendChild(sel); row.appendChild(sld);
+                        row.appendChild(highlightContainer); 
+                        row.appendChild(label); 
+                        row.appendChild(sel); 
+                        row.appendChild(sld);
+                        row.appendChild(volLabel);
                         mixerPanel.appendChild(row);
-                        
-                        const opt = document.createElement('option'); opt.value = voiceKey; opt.textContent = labelName;
-                        voiceSelect.appendChild(opt);
                     });
                 });
                 synths["fallback"] = new Tone.PolySynth(Tone.Synth, patchLibrary["Standard Synth"]).toDestination();
@@ -313,7 +468,10 @@
             function prepareAudioEvents() {
                 try {
                     Tone.Transport.cancel();
-                    osmd.cursor.show(); osmd.cursor.reset();
+                    
+                    osmd.cursor.show(); 
+                    osmd.cursor.reset();
+
                     Tone.Transport.bpm.value = tempoSlider.value;
                     const ppq = Tone.Transport.PPQ * 4;
                     measureMap = [];
@@ -368,14 +526,27 @@
                                 }
 
                                 clearHighlights();
-                                const selectedVoiceKey = voiceSelect.value;
-                                if (selectedVoiceKey !== "none") {
+
+                                if (activeHighlights.size > 0) {
                                     osmd.cursor.GNotesUnderCursor()?.forEach(gn => {
-                                        if (getVoiceKey(gn.sourceNote) === selectedVoiceKey) {
+                                        const vKey = getVoiceKey(gn.sourceNote);
+                                        if (activeHighlights.has(vKey)) {
                                             gn.getSVGGElement()?.querySelectorAll("path, rect")?.forEach(shape => {
-                                                if (!shape.dataset.originalFill) shape.dataset.originalFill = shape.style.fill || shape.getAttribute("fill") || "";
-                                                shape.style.fill = "#ff0000"; 
-                                                highlightedElements.push(shape);
+                                                // Save original state before modifying
+                                                if (!shape.dataset.originalStroke) {
+                                                    shape.dataset.originalStroke = shape.style.stroke || shape.getAttribute("stroke") || "";
+                                                    shape.dataset.originalStrokeWidth = shape.style.strokeWidth || shape.getAttribute("stroke-width") || "";
+                                                    shape.dataset.originalStrokeLinejoin = shape.style.strokeLinejoin || shape.getAttribute("stroke-linejoin") || "";
+                                                    shape.dataset.originalPaintOrder = shape.style.paintOrder || shape.getAttribute("paint-order") || "";
+                                                }
+                                                
+                                                // Create a thick halo behind the black note fill
+                                                shape.style.stroke = "#edae49"; 
+                                                shape.style.strokeWidth = "5px"; 
+                                                shape.style.strokeLinejoin = "round";
+                                                shape.style.paintOrder = "stroke fill"; 
+                                                
+                                                highlightedElements.add(shape);
                                             });
                                         }
                                     });
