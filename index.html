@@ -16,32 +16,32 @@
             margin-bottom: 20px; position: sticky; top: 10px; z-index: 1000; max-height: 90vh; overflow-y: auto; 
         }
         
-        .primary-controls { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; border-bottom: 2px solid transparent; }
+        .primary-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; border-bottom: 2px solid transparent; }
         .search-box { display: flex; gap: 8px; background: #f0f4f8; padding: 8px; border-radius: 6px; border: 1px solid #dce4ec; align-items: center; }
         
         .settings-panel { display: flex; flex-wrap: wrap; gap: 30px; margin-top: 15px; padding-top: 15px; border-top: 2px solid #eee; overflow: hidden; transition: 0.3s; }
         .settings-panel.hidden { max-height: 0; padding-top: 0; margin-top: 0; opacity: 0; }
         
-        .control-group { display: flex; flex-direction: column; gap: 10px; }
-        .row { display: flex; align-items: center; gap: 10px; }
+        .control-group { display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+        .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         
-        button { padding: 8px 16px; border: none; border-radius: 4px; background: #0066cc; color: white; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button { padding: 8px 16px; border: none; border-radius: 4px; background: #0066cc; color: white; cursor: pointer; font-weight: bold; transition: 0.2s; white-space: nowrap; }
         button:hover:not(:disabled) { background: #0052a3; }
         button:disabled { background: #cccccc; cursor: not-allowed; }
         .small-btn { padding: 4px 8px; font-size: 12px; background: #555; }
         .small-btn:hover:not(:disabled) { background: #333; }
         
-        select, .text-input { padding: 6px; border-radius: 4px; border: 1px solid #ccc; }
+        select, .text-input { padding: 6px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; }
         .text-input { width: 220px; }
 
-        .mixer { border-left: 2px solid #eee; padding-left: 30px; flex-grow: 1; min-width: 550px; }
+        .mixer { border-left: 2px solid #eee; padding-left: 30px; flex-grow: 1; min-width: 500px; }
         .mixer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .mixer-header h3 { margin: 0; font-size: 16px; color: #333; }
         .mixer-actions { display: flex; gap: 10px; }
         
         .mixer-row { 
             display: grid; 
-            grid-template-columns: 80px minmax(100px, 1.2fr) 1.5fr 1.5fr 35px; 
+            grid-template-columns: minmax(100px, 1.2fr) 80px 1.5fr 1.5fr 35px; 
             align-items: center; 
             gap: 15px; 
             margin-bottom: 10px; 
@@ -66,6 +66,33 @@
         .vol-label { font-family: monospace; font-size: 12px; color: #666; text-align: right; }
 
         #osmdCanvas { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); min-height: 400px; }
+
+        /* --- MOBILE RESPONSIVENESS --- */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .dashboard { position: relative; max-height: none; top: 0; padding: 15px; }
+            
+            .search-box { flex-direction: column; width: 100%; align-items: stretch; }
+            .text-input { width: 100%; }
+            
+            .primary-controls button { flex: 1 1 calc(33% - 10px); text-align: center; }
+            #toggleSettingsBtn { flex: 1 1 100%; margin-left: 0 !important; margin-top: 5px; }
+            
+            .settings-panel { flex-direction: column; }
+            .mixer { min-width: 100%; border-left: none; padding-left: 0; padding-top: 20px; margin-top: 10px; border-top: 2px solid #eee; }
+            
+            .mixer-labels { display: none; }
+            .mixer-row {
+                display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+                background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px; margin-bottom: 15px;
+            }
+            .mixer-row > span:nth-child(1) { width: 100%; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 8px; } 
+            .mixer-row > div:nth-child(2) { display: flex; align-items: center; gap: 8px; } 
+            .mixer-row > div:nth-child(2)::after { content: 'Highlight Notes'; font-size: 13px; color: #555; }
+            .mixer-row > select:nth-child(3) { width: 100%; margin-bottom: 8px; margin-top: 8px; } 
+            .mixer-row > input[type="range"]:nth-child(4) { flex-grow: 1; margin-right: 15px; } 
+            .mixer-row > span:nth-child(5) { width: 45px; text-align: right; font-weight: bold;} 
+        }
     </style>
 </head>
 <body>
@@ -91,14 +118,23 @@
                 <div class="row">
                     <label style="font-weight: bold; width: 60px;">Tempo:</label>
                     <input type="range" id="tempoSlider" min="40" max="240" value="120" style="width: 100px;">
-                    <span id="tempoValue" style="min-width: 30px;">120</span>
+                    <span id="tempoValue" style="width: 65px; display: inline-block;">120 bpm</span>
                     <button id="resetTempoBtn" class="small-btn" disabled>Reset</button>
                 </div>
+
                 <div class="row" style="margin-top: 10px;">
+                    <label style="cursor: pointer; margin-right: 15px;"><input type="checkbox" id="metronomeToggle"> Click</label>
                     <label style="cursor: pointer; margin-right: 15px;"><input type="checkbox" id="loopToggle"> Loop</label>
-                    <label style="cursor: pointer; margin-right: 15px;"><input type="checkbox" id="metronomeToggle"> Metronome</label>
                     <label style="cursor: pointer;"><input type="checkbox" id="autoscrollToggle" checked> Autoscroll</label>
                 </div>
+                
+                <div class="row" id="clickVolContainer" style="margin-top: 5px; display: none;">
+                    <label style="font-weight: bold; width: 60px;">Volume:</label>
+                    <input type="range" id="metronomeVolSlider" min="-30" max="10" value="0" style="width: 100px;">
+                    <span id="metronomeVolValue" style="width: 65px; display: inline-block; font-family: monospace; font-size: 13px; color: #555;">0</span>
+                    <button id="resetClickBtn" class="small-btn" disabled>Reset</button>
+                </div>
+
             </div>
 
             <div class="mixer" id="mixerPanel">
@@ -131,12 +167,20 @@
             const seekBackBtn = document.getElementById('seekBackBtn');
             const seekForwardBtn = document.getElementById('seekForwardBtn');
             const toggleSettingsBtn = document.getElementById('toggleSettingsBtn');
+            
             const tempoSlider = document.getElementById('tempoSlider');
             const tempoValue = document.getElementById('tempoValue');
             const resetTempoBtn = document.getElementById('resetTempoBtn');
+            
+            const clickVolContainer = document.getElementById('clickVolContainer');
+            const metronomeVolSlider = document.getElementById('metronomeVolSlider');
+            const metronomeVolValue = document.getElementById('metronomeVolValue');
+            const resetClickBtn = document.getElementById('resetClickBtn');
+
             const metronomeToggle = document.getElementById('metronomeToggle');
             const loopToggle = document.getElementById('loopToggle'); 
             const autoscrollToggle = document.getElementById('autoscrollToggle');
+            
             const mixerPanel = document.getElementById('mixerPanel');
             const canvas = document.getElementById('osmdCanvas');
 
@@ -163,7 +207,8 @@
             };
 
             const clickSynth = new Tone.MembraneSynth({ pitchDecay: 0, envelope: { attack: 0, decay: 0.02, sustain: 0 } }).toDestination();
-            clickSynth.volume.value = -10;
+            // Start at internal volume +10 (which correlates to the 0 setting on our new slider)
+            clickSynth.volume.value = 10;
 
             // --- INITIALIZE UI ---
             hymnCatalog.forEach(hymn => {
@@ -178,19 +223,42 @@
                 toggleSettingsBtn.textContent = isHidden ? 'Show Settings' : 'Hide Settings';
             });
 
+            // Tempo Controls
             tempoSlider.addEventListener('input', (e) => {
-                tempoValue.textContent = e.target.value;
+                tempoValue.textContent = e.target.value + " bpm";
                 Tone.Transport.bpm.value = e.target.value;
-            });
-
-            loopToggle.addEventListener('change', (e) => {
-                Tone.Transport.loop = e.target.checked;
+                resetTempoBtn.disabled = parseInt(e.target.value) === defaultBpm;
             });
 
             resetTempoBtn.addEventListener('click', () => {
                 tempoSlider.value = defaultBpm;
-                tempoValue.textContent = defaultBpm;
+                tempoValue.textContent = defaultBpm + " bpm";
                 Tone.Transport.bpm.value = defaultBpm;
+                resetTempoBtn.disabled = true;
+            });
+
+            // Click Volume Controls
+            metronomeVolSlider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                // Map the -30 -> 10 visual range back to a -20 -> 20 internal audio range
+                clickSynth.volume.value = val <= -30 ? -Infinity : val + 10;
+                metronomeVolValue.textContent = val <= -30 ? "MUTE" : (val > 0 ? `+${val}` : `${val}`);
+                resetClickBtn.disabled = val === 0;
+            });
+
+            resetClickBtn.addEventListener('click', () => {
+                metronomeVolSlider.value = 0;
+                metronomeVolSlider.dispatchEvent(new Event('input')); 
+            });
+
+            // Toggles
+            metronomeToggle.addEventListener('change', (e) => {
+                // Show/hide the volume control row based on the toggle state
+                clickVolContainer.style.display = e.target.checked ? 'flex' : 'none';
+            });
+
+            loopToggle.addEventListener('change', (e) => {
+                Tone.Transport.loop = e.target.checked;
             });
 
             // Load from Server
@@ -263,9 +331,9 @@
                     } catch(err) { console.warn("Tempo extraction failed, using 120."); }
 
                     tempoSlider.value = defaultBpm;
-                    tempoValue.textContent = defaultBpm;
+                    tempoValue.textContent = defaultBpm + " bpm";
                     Tone.Transport.bpm.value = defaultBpm;
-                    resetTempoBtn.disabled = false;
+                    resetTempoBtn.disabled = true;
 
                     buildMixerUI(); 
                     playBtn.disabled = false;
@@ -342,7 +410,6 @@
 
             function clearHighlights() {
                 highlightedElements.forEach(el => {
-                    // Revert our outline modifications
                     el.style.stroke = el.dataset.originalStroke || "";
                     el.style.strokeWidth = el.dataset.originalStrokeWidth || "";
                     el.style.strokeLinejoin = el.dataset.originalStrokeLinejoin || "";
@@ -371,8 +438,8 @@
                         </div>
                     </div>
                     <div class="mixer-row mixer-labels">
-                        <span style="text-align: center;">Highlight</span>
                         <span>Part</span>
+                        <span style="text-align: center;">Highlight</span>
                         <span>Instrument</span>
                         <span>Volume</span>
                         <span></span>
@@ -414,6 +481,10 @@
                         const row = document.createElement('div');
                         row.className = 'mixer-row';
 
+                        const label = document.createElement('span'); 
+                        label.textContent = labelName;
+                        label.style.fontWeight = "bold";
+
                         const highlightContainer = document.createElement('div');
                         highlightContainer.className = 'highlight-toggle-container';
                         const highlightCb = document.createElement('input');
@@ -425,10 +496,6 @@
                             else activeHighlights.delete(voiceKey);
                         });
                         highlightContainer.appendChild(highlightCb);
-
-                        const label = document.createElement('span'); 
-                        label.textContent = labelName;
-                        label.style.fontWeight = "bold";
 
                         const sel = document.createElement('select');
                         Object.keys(patchLibrary).forEach(p => {
@@ -454,8 +521,8 @@
                             volLabel.textContent = val <= -30 ? "MUTE" : `${val > 0 ? '+' : ''}${val}`;
                         });
 
-                        row.appendChild(highlightContainer); 
                         row.appendChild(label); 
+                        row.appendChild(highlightContainer); 
                         row.appendChild(sel); 
                         row.appendChild(sld);
                         row.appendChild(volLabel);
@@ -532,7 +599,6 @@
                                         const vKey = getVoiceKey(gn.sourceNote);
                                         if (activeHighlights.has(vKey)) {
                                             gn.getSVGGElement()?.querySelectorAll("path, rect")?.forEach(shape => {
-                                                // Save original state before modifying
                                                 if (!shape.dataset.originalStroke) {
                                                     shape.dataset.originalStroke = shape.style.stroke || shape.getAttribute("stroke") || "";
                                                     shape.dataset.originalStrokeWidth = shape.style.strokeWidth || shape.getAttribute("stroke-width") || "";
@@ -540,7 +606,6 @@
                                                     shape.dataset.originalPaintOrder = shape.style.paintOrder || shape.getAttribute("paint-order") || "";
                                                 }
                                                 
-                                                // Create a thick halo behind the black note fill
                                                 shape.style.stroke = "#edae49"; 
                                                 shape.style.strokeWidth = "5px"; 
                                                 shape.style.strokeLinejoin = "round";
