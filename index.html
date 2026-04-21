@@ -207,7 +207,6 @@
             };
 
             const clickSynth = new Tone.MembraneSynth({ pitchDecay: 0, envelope: { attack: 0, decay: 0.02, sustain: 0 } }).toDestination();
-            // Start at internal volume +10 (which correlates to the 0 setting on our new slider)
             clickSynth.volume.value = 10;
 
             // --- INITIALIZE UI ---
@@ -240,7 +239,6 @@
             // Click Volume Controls
             metronomeVolSlider.addEventListener('input', (e) => {
                 const val = parseInt(e.target.value);
-                // Map the -30 -> 10 visual range back to a -20 -> 20 internal audio range
                 clickSynth.volume.value = val <= -30 ? -Infinity : val + 10;
                 metronomeVolValue.textContent = val <= -30 ? "MUTE" : (val > 0 ? `+${val}` : `${val}`);
                 resetClickBtn.disabled = val === 0;
@@ -253,7 +251,6 @@
 
             // Toggles
             metronomeToggle.addEventListener('change', (e) => {
-                // Show/hide the volume control row based on the toggle state
                 clickVolContainer.style.display = e.target.checked ? 'flex' : 'none';
             });
 
@@ -433,8 +430,8 @@
                     <div class="mixer-header">
                         <h3>Controls</h3>
                         <div class="mixer-actions">
-                            <button id="clearHighlightsBtn" class="small-btn">Clear Highlights</button>
-                            <button id="resetVolBtn" class="small-btn">Reset Volumes</button>
+                            <button id="clearHighlightsBtn" class="small-btn" disabled>Clear Highlights</button>
+                            <button id="resetVolBtn" class="small-btn" disabled>Reset Volumes</button>
                         </div>
                     </div>
                     <div class="mixer-row mixer-labels">
@@ -449,17 +446,22 @@
                 synths = {}; 
                 activeHighlights.clear();
                 
-                document.getElementById('clearHighlightsBtn').addEventListener('click', () => {
+                const clearHighlightsBtn = document.getElementById('clearHighlightsBtn');
+                const resetVolBtn = document.getElementById('resetVolBtn');
+
+                clearHighlightsBtn.addEventListener('click', () => {
                     document.querySelectorAll('.highlight-toggle').forEach(cb => cb.checked = false);
                     activeHighlights.clear();
                     clearHighlights(); 
+                    clearHighlightsBtn.disabled = true;
                 });
 
-                document.getElementById('resetVolBtn').addEventListener('click', () => {
+                resetVolBtn.addEventListener('click', () => {
                     document.querySelectorAll('.vol-slider').forEach(slider => {
                         slider.value = 0; 
                         slider.dispatchEvent(new Event('input')); 
                     });
+                    resetVolBtn.disabled = true;
                 });
 
                 osmd.sheet.Instruments.forEach(instr => {
@@ -494,6 +496,8 @@
                         highlightCb.addEventListener('change', (e) => {
                             if (e.target.checked) activeHighlights.add(voiceKey);
                             else activeHighlights.delete(voiceKey);
+                            
+                            clearHighlightsBtn.disabled = activeHighlights.size === 0;
                         });
                         highlightContainer.appendChild(highlightCb);
 
@@ -519,6 +523,12 @@
                             const val = parseInt(e.target.value);
                             synths[voiceKey].volume.value = val <= -30 ? -Infinity : val;
                             volLabel.textContent = val <= -30 ? "MUTE" : `${val > 0 ? '+' : ''}${val}`;
+                            
+                            let anyVolChanged = false;
+                            document.querySelectorAll('.vol-slider').forEach(s => {
+                                if (parseInt(s.value) !== 0) anyVolChanged = true;
+                            });
+                            resetVolBtn.disabled = !anyVolChanged;
                         });
 
                         row.appendChild(label); 
