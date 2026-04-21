@@ -67,31 +67,82 @@
 
         #osmdCanvas { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); min-height: 400px; }
 
+        /* --- MIXER VIEWS --- */
+        .desktop-mixer { display: block; }
+        .mobile-mixer { display: none; }
+
         /* --- MOBILE RESPONSIVENESS --- */
         @media (max-width: 768px) {
-            body { padding: 10px; }
-            .dashboard { position: relative; max-height: none; top: 0; padding: 15px; }
+            body { padding: 90px 10px 10px 10px; }
             
-            .search-box { flex-direction: column; width: 100%; align-items: stretch; }
-            .text-input { width: 100%; }
-            
-            .primary-controls button { flex: 1 1 calc(33% - 10px); text-align: center; }
-            #toggleSettingsBtn { flex: 1 1 100%; margin-left: 0 !important; margin-top: 5px; }
-            
-            .settings-panel { flex-direction: column; }
-            .mixer { min-width: 100%; border-left: none; padding-left: 0; padding-top: 20px; margin-top: 10px; border-top: 2px solid #eee; }
-            
-            .mixer-labels { display: none; }
-            .mixer-row {
-                display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
-                background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px; margin-bottom: 15px;
+            .dashboard { 
+                position: fixed; top: 0; left: 0; right: 0; width: 100%;
+                margin: 0; border-radius: 0; max-height: 100vh; overflow-y: auto; 
+                z-index: 1000; box-shadow: 0 4px 15px rgba(0,0,0,0.15); box-sizing: border-box;
             }
-            .mixer-row > span:nth-child(1) { width: 100%; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 8px; } 
-            .mixer-row > div:nth-child(2) { display: flex; align-items: center; gap: 8px; } 
-            .mixer-row > div:nth-child(2)::after { content: 'Highlight Notes'; font-size: 13px; color: #555; }
-            .mixer-row > select:nth-child(3) { width: 100%; margin-bottom: 8px; margin-top: 8px; } 
-            .mixer-row > input[type="range"]:nth-child(4) { flex-grow: 1; margin-right: 15px; } 
-            .mixer-row > span:nth-child(5) { width: 45px; text-align: right; font-weight: bold;} 
+            
+            .primary-controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; border-bottom: none; }
+            
+            /* Top Playback Menu */
+            .primary-controls > button:not(#toggleSettingsBtn) { 
+                flex: 1 1 calc(20% - 8px); padding: 12px 4px; font-size: 14px; text-align: center; 
+            }
+            
+            #toggleSettingsBtn { order: 6; flex: 1 1 100%; margin: 5px 0 0 0 !important; }
+
+            /* Full-width Search Area */
+            .search-box { 
+                display: none; order: 10; width: 100%; 
+                flex-direction: column; margin-top: 15px; gap: 10px; padding: 0; background: transparent; border: none;
+            }
+            body.settings-open .search-box { display: flex; }
+            
+            /* Safari Zoom Fix (font-size 16px+) & Full Width */
+            #hymnSearch { 
+                width: 100%; font-size: 16px; padding: 12px; box-sizing: border-box; 
+            }
+            #loadHymnBtn { 
+                width: 100%; padding: 12px; font-size: 16px; 
+            }
+            
+            .settings-panel { flex-direction: column; gap: 15px; }
+            
+            .mixer { padding: 0; border: none; min-width: 100%; margin-top: 10px; border-top: 2px solid #eee; padding-top: 15px;}
+            .desktop-mixer { display: none !important; }
+            .mobile-mixer { display: flex; flex-direction: column; gap: 15px; width: 100%; }
+            
+            .mobile-mixer-section { 
+                background: #fff; border: 1px solid #e0e0e0; 
+                border-radius: 6px; padding: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); 
+            }
+            .mobile-mixer-section h4 { 
+                margin: 0 0 15px 0; font-size: 15px; color: #333; 
+                border-bottom: 2px solid #f0f0f0; padding-bottom: 8px; 
+            }
+            
+            .mobile-vol-row { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+            .mobile-vol-row label { width: 85px; font-size: 13px; font-weight: bold; color: #555; }
+            .mobile-vol-row input[type="range"] { flex-grow: 1; }
+            .mobile-vol-row span { width: 35px; text-align: right; font-family: monospace; font-size: 13px; }
+            
+            /* Vertical Highlighting Stacks */
+            .mobile-highlight-row { display: flex; flex-direction: column; gap: 12px; }
+            .mobile-highlight-item { 
+                display: flex; flex-direction: row; align-items: center; gap: 12px; 
+                padding: 4px 0; border-bottom: 1px solid #f9f9f9;
+            }
+            .mobile-highlight-item span { font-size: 14px; color: #333; }
+            .mobile-highlight-item input { transform: scale(1.3); }
+            
+            .mobile-inst-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+            .mobile-inst-row label { width: 85px; font-size: 13px; font-weight: bold; color: #555; }
+            .mobile-inst-row select { flex-grow: 1; padding: 8px; font-size: 14px; }
+            
+            /* Smaller Reset Buttons */
+            .mobile-resets { display: flex; gap: 10px; margin-top: 10px; }
+            .mobile-resets button { 
+                flex: 1; padding: 8px; font-size: 12px; background: #666; 
+            }
         }
     </style>
 </head>
@@ -217,8 +268,12 @@
             });
 
             // --- UI HANDLERS ---
+            // Initial state tag for mobile layout
+            document.body.classList.add('settings-open');
+
             toggleSettingsBtn.addEventListener('click', () => {
                 const isHidden = settingsPanel.classList.toggle('hidden');
+                document.body.classList.toggle('settings-open', !isHidden);
                 toggleSettingsBtn.textContent = isHidden ? 'Show Settings' : 'Hide Settings';
             });
 
@@ -426,9 +481,14 @@
             }
 
             function buildMixerUI() {
-                mixerPanel.innerHTML = `
+                mixerPanel.innerHTML = '';
+
+                // --- DESKTOP UI CONTAINER ---
+                const desktopMixer = document.createElement('div');
+                desktopMixer.className = 'desktop-mixer';
+                desktopMixer.innerHTML = `
                     <div class="mixer-header">
-                        <h3>Controls</h3>
+                        <h3>Voice Mixer</h3>
                         <div class="mixer-actions">
                             <button id="clearHighlightsBtn" class="small-btn" disabled>Clear Highlights</button>
                             <button id="resetVolBtn" class="small-btn" disabled>Reset Volumes</button>
@@ -442,27 +502,50 @@
                         <span></span>
                     </div>
                 `;
+
+                // --- MOBILE UI CONTAINER ---
+                const mobileMixer = document.createElement('div');
+                mobileMixer.className = 'mobile-mixer';
+
+                const mVolSection = document.createElement('div'); mVolSection.className = 'mobile-mixer-section';
+                mVolSection.innerHTML = '<h4>Volumes</h4>';
                 
+                const mHighlightSection = document.createElement('div'); mHighlightSection.className = 'mobile-mixer-section';
+                mHighlightSection.innerHTML = '<h4>Highlighting</h4><div class="mobile-highlight-row"></div>';
+                
+                const mInstSection = document.createElement('div'); mInstSection.className = 'mobile-mixer-section';
+                mInstSection.innerHTML = '<h4>Instruments</h4>';
+
+                const mResetsSection = document.createElement('div'); mResetsSection.className = 'mobile-resets';
+                const mClearHighlightsBtn = document.createElement('button'); mClearHighlightsBtn.textContent = 'Clear Highlights'; mClearHighlightsBtn.disabled = true;
+                const mResetVolBtn = document.createElement('button'); mResetVolBtn.textContent = 'Reset Volumes'; mResetVolBtn.disabled = true;
+                mResetsSection.append(mClearHighlightsBtn, mResetVolBtn);
+
+                mixerPanel.append(desktopMixer, mobileMixer);
+
+                // Dictionary to sync dual-UI elements
+                const syncData = { sliders: [], highlights: [], selects: [] };
                 synths = {}; 
                 activeHighlights.clear();
-                
-                const clearHighlightsBtn = document.getElementById('clearHighlightsBtn');
-                const resetVolBtn = document.getElementById('resetVolBtn');
 
-                clearHighlightsBtn.addEventListener('click', () => {
-                    document.querySelectorAll('.highlight-toggle').forEach(cb => cb.checked = false);
-                    activeHighlights.clear();
-                    clearHighlights(); 
-                    clearHighlightsBtn.disabled = true;
-                });
+                const clearHighlightsBtn = desktopMixer.querySelector('#clearHighlightsBtn');
+                const resetVolBtn = desktopMixer.querySelector('#resetVolBtn');
 
-                resetVolBtn.addEventListener('click', () => {
-                    document.querySelectorAll('.vol-slider').forEach(slider => {
-                        slider.value = 0; 
-                        slider.dispatchEvent(new Event('input')); 
-                    });
-                    resetVolBtn.disabled = true;
-                });
+                // Sync Reset Handlers
+                const doClearHighlights = () => {
+                    syncData.highlights.forEach(cb => cb.checked = false);
+                    activeHighlights.clear(); clearHighlights(); 
+                    clearHighlightsBtn.disabled = true; mClearHighlightsBtn.disabled = true;
+                };
+                clearHighlightsBtn.addEventListener('click', doClearHighlights);
+                mClearHighlightsBtn.addEventListener('click', doClearHighlights);
+
+                const doResetVolumes = () => {
+                    syncData.sliders.forEach(slider => { slider.value = 0; slider.dispatchEvent(new Event('input')); });
+                    resetVolBtn.disabled = true; mResetVolBtn.disabled = true;
+                };
+                resetVolBtn.addEventListener('click', doResetVolumes);
+                mResetVolBtn.addEventListener('click', doResetVolumes);
 
                 osmd.sheet.Instruments.forEach(instr => {
                     const instrName = instr.Name || `Part ${instr.Id + 1}`;
@@ -480,66 +563,94 @@
                         synths[voiceKey] = new Tone.PolySynth(Tone.Synth, patchLibrary["Standard Synth"]).toDestination();
                         synths[voiceKey].volume.value = 0; 
 
-                        const row = document.createElement('div');
-                        row.className = 'mixer-row';
+                        // --- GENERATE DESKTOP ELEMENTS ---
+                        const row = document.createElement('div'); row.className = 'mixer-row';
+                        const label = document.createElement('span'); label.textContent = labelName; label.style.fontWeight = "bold";
 
-                        const label = document.createElement('span'); 
-                        label.textContent = labelName;
-                        label.style.fontWeight = "bold";
-
-                        const highlightContainer = document.createElement('div');
-                        highlightContainer.className = 'highlight-toggle-container';
-                        const highlightCb = document.createElement('input');
-                        highlightCb.type = 'checkbox';
-                        highlightCb.className = 'highlight-toggle';
-                        highlightCb.title = "Highlight notes during playback";
-                        highlightCb.addEventListener('change', (e) => {
-                            if (e.target.checked) activeHighlights.add(voiceKey);
-                            else activeHighlights.delete(voiceKey);
-                            
-                            clearHighlightsBtn.disabled = activeHighlights.size === 0;
-                        });
-                        highlightContainer.appendChild(highlightCb);
+                        const highlightContainer = document.createElement('div'); highlightContainer.className = 'highlight-toggle-container';
+                        const highlightCb = document.createElement('input'); highlightCb.type = 'checkbox'; highlightCb.className = 'highlight-toggle';
 
                         const sel = document.createElement('select');
-                        Object.keys(patchLibrary).forEach(p => {
-                            const o = document.createElement('option'); o.value = p; o.textContent = p; sel.appendChild(o);
-                        });
-                        sel.addEventListener('change', (e) => {
+                        Object.keys(patchLibrary).forEach(p => { const o = document.createElement('option'); o.value = p; o.textContent = p; sel.appendChild(o); });
+
+                        const volLabel = document.createElement('span'); volLabel.className = 'vol-label'; volLabel.textContent = "0"; 
+                        const sld = document.createElement('input'); sld.type = 'range'; sld.min = -30; sld.max = 10; sld.value = 0; sld.className = 'vol-slider';
+
+                        // --- GENERATE MOBILE ELEMENTS ---
+                        const mVolRow = document.createElement('div'); mVolRow.className = 'mobile-vol-row';
+                        const mVolLabelText = document.createElement('label'); mVolLabelText.textContent = labelName;
+                        const mSld = document.createElement('input'); mSld.type = 'range'; mSld.min = -30; mSld.max = 10; mSld.value = 0;
+                        const mVolLabelNum = document.createElement('span'); mVolLabelNum.textContent = "0";
+                        mVolRow.append(mVolLabelText, mSld, mVolLabelNum);
+                        mVolSection.appendChild(mVolRow);
+
+                        // --- MOBILE HIGHLIGHTING (Vertical Stack) ---
+                        const mHighlightItem = document.createElement('div'); 
+                        mHighlightItem.className = 'mobile-highlight-item';
+                        
+                        const mHighlightCb = document.createElement('input'); 
+                        mHighlightCb.type = 'checkbox';
+                        
+                        const mHighlightLabel = document.createElement('span'); 
+                        mHighlightLabel.textContent = labelName;
+                        
+                        // Place checkbox first for better thumb reach
+                        mHighlightItem.append(mHighlightCb, mHighlightLabel); 
+                        mHighlightSection.querySelector('.mobile-highlight-row').appendChild(mHighlightItem);
+
+                        const mInstRow = document.createElement('div'); mInstRow.className = 'mobile-inst-row';
+                        const mInstLabelText = document.createElement('label'); mInstLabelText.textContent = labelName;
+                        const mSel = document.createElement('select');
+                        Object.keys(patchLibrary).forEach(p => { const o = document.createElement('option'); o.value = p; o.textContent = p; mSel.appendChild(o); });
+                        mInstRow.append(mInstLabelText, mSel);
+                        mInstSection.appendChild(mInstRow);
+
+                        // --- SYNC EVENTS LOGIC ---
+                        syncData.sliders.push(sld, mSld);
+                        syncData.highlights.push(highlightCb, mHighlightCb);
+                        syncData.selects.push(sel, mSel);
+
+                        const updateHighlights = (isChecked) => {
+                            highlightCb.checked = isChecked; mHighlightCb.checked = isChecked;
+                            if (isChecked) activeHighlights.add(voiceKey); else activeHighlights.delete(voiceKey);
+                            const active = activeHighlights.size > 0;
+                            clearHighlightsBtn.disabled = !active; mClearHighlightsBtn.disabled = !active;
+                        };
+                        highlightCb.addEventListener('change', (e) => updateHighlights(e.target.checked));
+                        mHighlightCb.addEventListener('change', (e) => updateHighlights(e.target.checked));
+
+                        const updateSelect = (val) => {
+                            sel.value = val; mSel.value = val;
                             const vol = synths[voiceKey].volume.value;
                             synths[voiceKey].dispose();
-                            synths[voiceKey] = new Tone.PolySynth(Tone.Synth, patchLibrary[e.target.value]).toDestination();
+                            synths[voiceKey] = new Tone.PolySynth(Tone.Synth, patchLibrary[val]).toDestination();
                             synths[voiceKey].volume.value = vol;
-                        });
+                        };
+                        sel.addEventListener('change', (e) => updateSelect(e.target.value));
+                        mSel.addEventListener('change', (e) => updateSelect(e.target.value));
 
-                        const volLabel = document.createElement('span');
-                        volLabel.className = 'vol-label';
-                        volLabel.textContent = "0"; 
-
-                        const sld = document.createElement('input');
-                        sld.type = 'range'; sld.min = -30; sld.max = 10; sld.value = 0;
-                        sld.className = 'vol-slider';
-                        sld.addEventListener('input', (e) => {
-                            const val = parseInt(e.target.value);
-                            synths[voiceKey].volume.value = val <= -30 ? -Infinity : val;
-                            volLabel.textContent = val <= -30 ? "MUTE" : `${val > 0 ? '+' : ''}${val}`;
+                        const updateVol = (val) => {
+                            sld.value = val; mSld.value = val;
+                            const num = parseInt(val);
+                            synths[voiceKey].volume.value = num <= -30 ? -Infinity : num;
+                            const textStr = num <= -30 ? "MUTE" : `${num > 0 ? '+' : ''}${num}`;
+                            volLabel.textContent = textStr; mVolLabelNum.textContent = textStr;
                             
-                            let anyVolChanged = false;
-                            document.querySelectorAll('.vol-slider').forEach(s => {
-                                if (parseInt(s.value) !== 0) anyVolChanged = true;
-                            });
-                            resetVolBtn.disabled = !anyVolChanged;
-                        });
+                            const anyVolChanged = syncData.sliders.some(s => parseInt(s.value) !== 0);
+                            resetVolBtn.disabled = !anyVolChanged; mResetVolBtn.disabled = !anyVolChanged;
+                        };
+                        sld.addEventListener('input', (e) => updateVol(e.target.value));
+                        mSld.addEventListener('input', (e) => updateVol(e.target.value));
 
-                        row.appendChild(label); 
-                        row.appendChild(highlightContainer); 
-                        row.appendChild(sel); 
-                        row.appendChild(sld);
-                        row.appendChild(volLabel);
-                        mixerPanel.appendChild(row);
+                        // Append Desktop Elements
+                        highlightContainer.appendChild(highlightCb);
+                        row.append(label, highlightContainer, sel, sld, volLabel);
+                        desktopMixer.appendChild(row);
                     });
                 });
+
                 synths["fallback"] = new Tone.PolySynth(Tone.Synth, patchLibrary["Standard Synth"]).toDestination();
+                mobileMixer.append(mVolSection, mHighlightSection, mInstSection, mResetsSection);
             }
 
             function prepareAudioEvents() {
