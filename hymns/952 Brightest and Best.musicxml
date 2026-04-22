@@ -331,7 +331,7 @@
           <text>cost</text>
           </lyric>
         <lyric number="4">
-          <syllabic>single</syllabic>
+          <syllabic>begin</syllabic>
           <text>am</text>
           </lyric>
         </note>
@@ -692,7 +692,7 @@
           </lyric>
         <lyric number="3">
           <syllabic>begin</syllabic>
-          <text>li</text>
+          <text>E</text>
           </lyric>
         <lyric number="4">
           <syllabic>single</syllabic>
@@ -994,11 +994,11 @@
         <stem>down</stem>
         <lyric number="1">
           <syllabic>single</syllabic>
-          <text>Sur</text>
+          <text>Star</text>
           </lyric>
         <lyric number="3">
           <syllabic>single</syllabic>
-          <text>Gerns</text>
+          <text>Gems</text>
           </lyric>
         <lyric number="4">
           <syllabic>begin</syllabic>
