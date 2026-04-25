@@ -590,6 +590,9 @@
                     <div class="mixer-header">
                         <h3>Voice Mixer</h3>
                         <div class="mixer-actions">
+                            <select id="masterInstSelect" style="padding: 4px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px;">
+                                <option value="" disabled selected>Change All...</option>
+                            </select>
                             <button id="clearHighlightsBtn" class="small-btn" disabled>Clear Highlights</button>
                             <button id="resetVolBtn" class="small-btn" disabled>Reset Volumes</button>
                         </div>
@@ -613,14 +616,73 @@
                 mHighlightSection.innerHTML = '<h4>Highlighting</h4><div class="mobile-highlight-row"></div>';
                 
                 const mInstSection = document.createElement('div'); mInstSection.className = 'mobile-mixer-section';
-                mInstSection.innerHTML = '<h4>Instruments</h4>';
+                mInstSection.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f0f0f0; margin-bottom: 15px; padding-bottom: 8px;">
+                        <h4 style="margin: 0; border: none; padding: 0;">Instruments</h4>
+                        <select id="mMasterInstSelect" style="padding: 4px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px;">
+                            <option value="" disabled selected>Change All...</option>
+                        </select>
+                    </div>
+                `;
 
                 const mResetsSection = document.createElement('div'); mResetsSection.className = 'mobile-resets';
                 const mClearHighlightsBtn = document.createElement('button'); mClearHighlightsBtn.textContent = 'Clear Highlights'; mClearHighlightsBtn.disabled = true;
                 const mResetVolBtn = document.createElement('button'); mResetVolBtn.textContent = 'Reset Volumes'; mResetVolBtn.disabled = true;
                 mResetsSection.append(mClearHighlightsBtn, mResetVolBtn);
 
-                mixerPanel.append(desktopMixer, mobileMixer);
+                mixerPanel.append(desktopMixer, mobileMixer); 
+
+                // --- NEW "CHANGE ALL" LOGIC ---
+                const masterSelect = desktopMixer.querySelector('#masterInstSelect');
+                const mMasterSelect = mInstSection.querySelector('#mMasterInstSelect');
+
+                // Populate master dropdowns with patches
+                Object.keys(patchLibrary).forEach(p => { 
+                    const o1 = document.createElement('option'); o1.value = p; o1.textContent = p; masterSelect.appendChild(o1); 
+                    const o2 = document.createElement('option'); o2.value = p; o2.textContent = p; mMasterSelect.appendChild(o2); 
+                });
+
+                // Function to change all child dropdowns
+                const doChangeAllInstruments = async (newVal) => {
+                    if (!newVal) return;
+                    
+                    // Reset master selects back to the "Change All..." label
+                    masterSelect.value = ""; 
+                    mMasterSelect.value = "";
+
+                    const patchConfig = patchLibrary[newVal];
+
+                    // --- PRE-LOAD CHECK ---
+                    // If it's a sampler and hasn't been downloaded yet, download it ONCE here
+                    // to prevent all 4 parts from trying to download it at the same time.
+                    if (patchConfig && patchConfig.type === "sampler" && !globalBuffers[newVal]) {
+                        const originalPlayText = playBtn.textContent;
+                        playBtn.textContent = `Downloading ${newVal}...`;
+                        playBtn.disabled = true;
+                        
+                        await new Promise(resolve => {
+                            globalBuffers[newVal] = new Tone.ToneAudioBuffers({
+                                urls: patchConfig.urls,
+                                baseUrl: patchConfig.baseUrl,
+                                onload: resolve
+                            });
+                        });
+                        
+                        playBtn.textContent = originalPlayText;
+                        playBtn.disabled = false;
+                    }
+                    
+                    // Now that we guarantee the files are in memory, switch the dropdowns!
+                    syncData.selects.forEach((selectElem, idx) => {
+                        if (idx % 2 === 0) {
+                            selectElem.value = newVal;
+                            selectElem.dispatchEvent(new Event('change'));
+                        }
+                    });
+                };
+
+                masterSelect.addEventListener('change', (e) => doChangeAllInstruments(e.target.value));
+                mMasterSelect.addEventListener('change', (e) => doChangeAllInstruments(e.target.value));
 
                 const syncData = { sliders: [], highlights: [], selects: [] };
                 synths = {}; 
