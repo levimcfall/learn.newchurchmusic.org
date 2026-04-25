@@ -249,16 +249,89 @@
             let highlightedElements = new Set();
             let activeHighlights = new Set(); 
 
+            let globalBuffers = {}; // Caches the heavy audio files so they only download once
+
+            // --- UPDATED PATCH LIBRARY ---
             const patchLibrary = {
-                "Standard Synth": { oscillator: { type: "triangle" }, envelope: { attack: 0.05, decay: 0.1, sustain: 0.3, release: 1 } },
-                "Studio Piano": { oscillator: { type: "triangle8" }, envelope: { attack: 0.005, decay: 1.5, sustain: 0.1, release: 2 } },
-                "Crystal Pluck": { oscillator: { type: "sawtooth" }, envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.2 } },
-                "Warm Pad": { oscillator: { type: "sine" }, envelope: { attack: 0.8, decay: 0.5, sustain: 0.8, release: 2 } },
-                "Square Lead": { oscillator: { type: "square" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.4, release: 0.5 } }
+                "Synth": { type: "synth", oscillator: { type: "triangle" }, envelope: { attack: 0.05, decay: 0.1, sustain: 0.3, release: 1 } },
+                
+                "Piano": {
+                    type: "sampler",
+                    baseUrl: "samples/piano/",
+                    urls: { 
+                        "A#0": "As0.flac", "C1": "C1.flac", "D1": "D1.flac", "F#1": "Fs1.flac", 
+                        "A#1": "As1.flac", "C2": "C2.flac", "D2": "D2.flac", "F#2": "Fs2.flac", 
+                        "A#2": "As2.flac", "C3": "C3.flac", "D3": "D3.flac", "F#3": "Fs3.flac", 
+                        "A#3": "As3.flac", "C4": "C4.flac", "D4": "D4.flac", "F#4": "Fs4.flac", 
+                        "A#4": "As4.flac", "C5": "C5.flac", "D5": "D5.flac", "F#5": "Fs5.flac", 
+                        "A#5": "As5.flac", "C6": "C6.flac", "D6": "D6.flac", "F#6": "Fs6.flac", 
+                        "A#6": "As6.flac", "C7": "C7.flac", "D7": "D7.flac", "F#7": "Fs7.flac", 
+                        "G#7": "Gs7.flac"
+                    }
+                },
+                "Vibraphone": {
+                    type: "sampler",
+                    baseUrl: "samples/vibraphone/", // You will need to host these files!
+                    urls: {
+                        "A2": "A2.wav",
+                        "C3": "C3.wav",
+                        "E3": "E3.wav",
+                        "B3": "B3.wav",
+                        "D4": "D4.wav",
+                        "A4": "A4.wav",
+                        "E5": "E5.wav"
+                    }
+                }
             };
 
             const clickSynth = new Tone.MembraneSynth({ pitchDecay: 0, envelope: { attack: 0, decay: 0.02, sustain: 0 } }).toDestination();
             clickSynth.volume.value = 10;
+
+            class ToneSamplerWrapper {
+                constructor(sharedMemoryBank, urlsConfig) {
+                    this.volume = { value: 0 };
+                    this.isDisposed = false;
+                    
+                    // Extract the raw ToneAudioBuffer objects into a clean dictionary
+                    // so Tone.Sampler doesn't trip over internal class properties like "debug"
+                    const safeBufferMap = {};
+                    for (let note in urlsConfig) {
+                        if (sharedMemoryBank.has(note)) {
+                            safeBufferMap[note] = sharedMemoryBank.get(note);
+                        }
+                    }
+                    
+                    this.sampler = new Tone.Sampler({
+                        urls: safeBufferMap
+                    }).toDestination();
+                }
+                
+                triggerAttackRelease(note, duration, time) {
+                    if (!this.sampler.loaded || this.volume.value <= -30 || this.isDisposed) return;
+                    
+                    let vel = Math.pow(10, this.volume.value / 20) * 0.7; 
+                    vel = Math.max(0.05, Math.min(1.0, vel)); 
+
+                    try {
+                        this.sampler.triggerAttackRelease(note, duration, time + (Math.random() * 0.001), vel);
+                    } catch (e) {
+                        console.warn("Prevented overlapping note crash:", e);
+                    }
+                }
+                
+                dispose() { 
+                    this.isDisposed = true;
+                    this.sampler.releaseAll();
+                    this.sampler.disconnect(); // Instantly sever from speakers
+                    
+                    // Delay actual destruction by 1 second to let pending scheduled notes safely fire into the void
+                    setTimeout(() => this.sampler.dispose(), 1000); 
+                }
+                
+                releaseAll() {
+                    if (this.sampler.loaded && !this.isDisposed) this.sampler.releaseAll();
+                }
+            }
 
             // --- INITIALIZE UI ---
             hymnCatalog.forEach(hymn => {
@@ -646,11 +719,49 @@
                         highlightCb.addEventListener('change', (e) => updateHighlights(e.target.checked));
                         mHighlightCb.addEventListener('change', (e) => updateHighlights(e.target.checked));
 
-                        const updateSelect = (val) => {
+                        const updateSelect = async (val) => {
                             sel.value = val; mSel.value = val;
-                            const vol = synths[voiceKey].volume.value;
-                            synths[voiceKey].dispose();
-                            synths[voiceKey] = new Tone.PolySynth(Tone.Synth, patchLibrary[val]).toDestination();
+                            
+                            // Safely capture the previous volume, default to 0 if synth doesn't exist
+                            const vol = synths[voiceKey]?.volume?.value || 0; 
+                            const patchConfig = patchLibrary[val];
+                            
+                            // --- SAFE DISPOSAL ---
+                            const oldSynth = synths[voiceKey];
+                            if (oldSynth) {
+                                if (oldSynth.releaseAll) oldSynth.releaseAll();
+                                if (oldSynth.disconnect) oldSynth.disconnect();
+                                // Delay the deep engine disposal by 1s to prevent "Already Disposed" crashes
+                                setTimeout(() => { if (oldSynth.dispose) oldSynth.dispose(); }, 1000);
+                            }
+
+                            // --- INITIALIZE NEW INSTRUMENT ---
+                            if (patchConfig.type === "sampler") {
+                                
+                                if (!globalBuffers[val]) {
+                                    const originalPlayText = playBtn.textContent;
+                                    playBtn.textContent = `Downloading ${val}...`;
+                                    playBtn.disabled = true;
+                                    
+                                    await new Promise(resolve => {
+                                        globalBuffers[val] = new Tone.ToneAudioBuffers({
+                                            urls: patchConfig.urls,
+                                            baseUrl: patchConfig.baseUrl,
+                                            onload: resolve
+                                        });
+                                    });
+                                    
+                                    playBtn.textContent = originalPlayText;
+                                    playBtn.disabled = false;
+                                }
+                                
+                                // Notice we are now passing BOTH the memory bank and the url dictionary
+                                synths[voiceKey] = new ToneSamplerWrapper(globalBuffers[val], patchConfig.urls);
+                                
+                            } else {
+                                synths[voiceKey] = new Tone.PolySynth(Tone.Synth, patchConfig).toDestination();
+                            }
+                            
                             synths[voiceKey].volume.value = vol;
                         };
                         sel.addEventListener('change', (e) => updateSelect(e.target.value));
