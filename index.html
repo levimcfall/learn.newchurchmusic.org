@@ -251,6 +251,9 @@
 
             let globalBuffers = {}; // Caches the heavy audio files so they only download once
 
+            let savedMixerSettings = {}; 
+            let userTempoOverride = null;
+
             // --- UPDATED PATCH LIBRARY ---
             const patchLibrary = {
                 "Synth": { type: "synth", oscillator: { type: "triangle" }, envelope: { attack: 0.05, decay: 0.1, sustain: 0.3, release: 1 } },
@@ -352,12 +355,14 @@
 
             // Tempo Controls
             tempoSlider.addEventListener('input', (e) => {
+                userTempoOverride = e.target.value; // Save the manual override
                 tempoValue.textContent = e.target.value + " bpm";
                 Tone.Transport.bpm.value = e.target.value;
                 resetTempoBtn.disabled = parseInt(e.target.value) === defaultBpm;
             });
 
             resetTempoBtn.addEventListener('click', () => {
+                userTempoOverride = null; // Clear the override
                 tempoSlider.value = defaultBpm;
                 tempoValue.textContent = defaultBpm + " bpm";
                 Tone.Transport.bpm.value = defaultBpm;
@@ -460,10 +465,13 @@
                         }
                     } catch(err) { console.warn("Tempo extraction failed, using 120."); }
 
-                    tempoSlider.value = defaultBpm;
-                    tempoValue.textContent = defaultBpm + " bpm";
-                    Tone.Transport.bpm.value = defaultBpm;
-                    resetTempoBtn.disabled = true;
+                    // Apply override if it exists, otherwise use the hymn's default
+                    const targetBpm = userTempoOverride !== null ? userTempoOverride : defaultBpm;
+
+                    tempoSlider.value = targetBpm;
+                    tempoValue.textContent = targetBpm + " bpm";
+                    Tone.Transport.bpm.value = targetBpm;
+                    resetTempoBtn.disabled = (parseInt(targetBpm) === defaultBpm);
 
                     buildMixerUI(); 
                     playBtn.disabled = false;
@@ -708,6 +716,8 @@
                     syncData.highlights.forEach(cb => cb.checked = false);
                     activeHighlights.clear(); clearHighlights(); 
                     clearHighlightsBtn.disabled = true; mClearHighlightsBtn.disabled = true;
+                    // Wipe highlights from persistent memory
+                    for (let k in savedMixerSettings) savedMixerSettings[k].highlight = false;
                 };
                 clearHighlightsBtn.addEventListener('click', doClearHighlights);
                 mClearHighlightsBtn.addEventListener('click', doClearHighlights);
@@ -744,7 +754,14 @@
                             }
                         }
 
-                        synths[voiceKey] = new Tone.PolySynth(Tone.Synth, patchLibrary["Standard Synth"]).toDestination();
+                        // Load memory or set defaults
+                        if (!savedMixerSettings[voiceKey]) {
+                            savedMixerSettings[voiceKey] = { inst: "Synth", vol: 0, highlight: false };
+                        }
+                        const prevState = savedMixerSettings[voiceKey];
+
+                        // (Bug fix: changed "Standard Synth" to "Synth")
+                        synths[voiceKey] = new Tone.PolySynth(Tone.Synth, patchLibrary["Synth"]).toDestination();
                         synths[voiceKey].volume.value = 0; 
 
                         // Generate Desktop Elements
@@ -789,12 +806,15 @@
                             if (isChecked) activeHighlights.add(voiceKey); else activeHighlights.delete(voiceKey);
                             const active = activeHighlights.size > 0;
                             clearHighlightsBtn.disabled = !active; mClearHighlightsBtn.disabled = !active;
+                            
+                            savedMixerSettings[voiceKey].highlight = isChecked; // Save State
                         };
                         highlightCb.addEventListener('change', (e) => updateHighlights(e.target.checked));
                         mHighlightCb.addEventListener('change', (e) => updateHighlights(e.target.checked));
 
                         const updateSelect = async (val) => {
                             sel.value = val; mSel.value = val;
+                            savedMixerSettings[voiceKey].inst = val; // Save State
                             
                             // Safely capture the previous volume, default to 0 if synth doesn't exist
                             const vol = synths[voiceKey]?.volume?.value || 0; 
@@ -849,9 +869,16 @@
                             volLabel.textContent = textStr; mVolLabelNum.textContent = textStr;
                             const anyVolChanged = syncData.sliders.some(s => parseInt(s.value) !== 0);
                             resetVolBtn.disabled = !anyVolChanged; mResetVolBtn.disabled = !anyVolChanged;
+                            
+                            savedMixerSettings[voiceKey].vol = val; // Save State
                         };
                         sld.addEventListener('input', (e) => updateVol(e.target.value));
                         mSld.addEventListener('input', (e) => updateVol(e.target.value));
+
+                        // --- RESTORE PREVIOUS STATE ---
+                        updateVol(prevState.vol);
+                        updateHighlights(prevState.highlight);
+                        updateSelect(prevState.inst); 
 
                         highlightContainer.appendChild(highlightCb);
                         row.append(label, highlightContainer, sel, sld, volLabel);
@@ -859,7 +886,7 @@
                     });
                 });
 
-                synths["fallback"] = new Tone.PolySynth(Tone.Synth, patchLibrary["Standard Synth"]).toDestination();
+                synths["fallback"] = new Tone.PolySynth(Tone.Synth, patchLibrary["Synth"]).toDestination();
                 mobileMixer.append(mVolSection, mHighlightSection, mInstSection, mResetsSection);
             }
 
