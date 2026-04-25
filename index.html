@@ -489,8 +489,16 @@
             });
 
             pauseBtn.addEventListener('click', () => {
-                if (Tone.Transport.state === 'started') { Tone.Transport.pause(); silenceSynths(); pauseBtn.textContent = 'Resume'; }
-                else { Tone.Transport.start(); pauseBtn.textContent = 'Pause'; }
+                if (Tone.Transport.state === 'started') { 
+                    Tone.Transport.pause(); 
+                    silenceSynths(); 
+                    Tone.Draw.cancel(); // <--- NEW: Wipes out pending visual updates
+                    pauseBtn.textContent = 'Resume'; 
+                }
+                else { 
+                    Tone.Transport.start(); 
+                    pauseBtn.textContent = 'Pause'; 
+                }
             });
 
             stopBtn.addEventListener('click', stopPlayback);
@@ -509,6 +517,8 @@
                 if (!measureMap || measureMap.length === 0) return;
                 
                 silenceSynths();
+                Tone.Draw.cancel(); // <--- NEW: Prevents old frame events from jumping the cursor
+                
                 targetMeasure = Math.max(0, Math.min(measureMap.length - 1, targetMeasure));
                 Tone.Transport.position = (measureMap[targetMeasure] || 0) + "i";
                 
@@ -526,6 +536,8 @@
             function stopPlayback() {
                 Tone.Transport.stop(); Tone.Transport.position = 0;
                 silenceSynths();
+                Tone.Draw.cancel(); // <--- NEW: Clears the animation queue
+                
                 if (osmd.cursor) { osmd.cursor.reset(); osmd.cursor.hide(); }
                 clearHighlights();
                 playBtn.disabled = false; 
