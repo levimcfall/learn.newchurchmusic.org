@@ -207,6 +207,7 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            let currentXmlDoc = null;
             
             // --- HYMN CATALOG ---
             const hymnCatalog = [
@@ -246,6 +247,7 @@
             const osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(canvas, { 
                 autoResize: true, 
                 backend: "svg",
+                followRepeats: true,
                 cursorsOptions: [{ type: 0, color: "#0066cc", alpha: 0.35, follow: true }]
             });
 
@@ -260,6 +262,8 @@
 
             let savedMixerSettings = {}; 
             let userTempoOverride = null;
+
+            let justSeeked = true; // Tracks if the user just clicked Play or Seek
 
             // --- UPDATED PATCH LIBRARY ---
             const patchLibrary = {
@@ -465,29 +469,31 @@
                 stopPlayback();
                 
                 try {
+                    const parser = new DOMParser();
+                    currentXmlDoc = parser.parseFromString(xmlContent, "text/xml"); // SAVE TO GLOBAL
+                    
                     if (hymnData) {
-                        const parser = new DOMParser();
-                        const xmlDoc = parser.parseFromString(xmlContent, "text/xml");
                         const newTitle = `${hymnData.number} ${hymnData.title}`;
                         
-                        let workTitle = xmlDoc.getElementsByTagName("work-title")[0];
-                        let movementTitle = xmlDoc.getElementsByTagName("movement-title")[0];
+                        let workTitle = currentXmlDoc.getElementsByTagName("work-title")[0];
+                        let movementTitle = currentXmlDoc.getElementsByTagName("movement-title")[0];
                         
                         if (workTitle) {
                             workTitle.textContent = newTitle;
                         } else if (movementTitle) {
                             movementTitle.textContent = newTitle;
                         } else {
-                            const movementTitleNode = xmlDoc.createElement("movement-title");
+                            const movementTitleNode = currentXmlDoc.createElement("movement-title");
                             movementTitleNode.textContent = newTitle;
-                            xmlDoc.documentElement.insertBefore(movementTitleNode, xmlDoc.documentElement.firstChild);
+                            currentXmlDoc.documentElement.insertBefore(movementTitleNode, currentXmlDoc.documentElement.firstChild);
                         }
                         
                         const serializer = new XMLSerializer();
-                        xmlContent = serializer.serializeToString(xmlDoc);
+                        xmlContent = serializer.serializeToString(currentXmlDoc);
                     }
 
                     await osmd.load(xmlContent);
+
                     if (window.innerWidth <= 768) {
                         osmd.zoom = 0.6; 
                     } else {
@@ -543,20 +549,16 @@
                 targetMeasure = Math.max(0, Math.min(measureMap.length - 1, targetMeasure));
                 Tone.Transport.position = (measureMap[targetMeasure] || 0) + "i";
                 
-                osmd.cursor.reset();
-                while (!osmd.cursor.Iterator.EndReached && osmd.cursor.Iterator.CurrentMeasureIndex < targetMeasure) {
-                    osmd.cursor.next();
-                }
-                
-                isFirstEvent = true;
+                alignCursorTo(targetMeasure, true); // Force visual reset to the measure
                 clearHighlights();
                 
+                justSeeked = true; // Tell the draw loop not to advance on the first note
+                
                 if (Tone.Transport.state === 'paused') {
-                     playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Resume</span>';
+                    playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Resume</span>';
                 }
             }
 
-            // We still need a full stop function to wipe the slate clean when a NEW hymn is loaded
             function stopPlayback() {
                 Tone.Transport.stop(); Tone.Transport.position = 0;
                 silenceSynths();
@@ -564,6 +566,8 @@
                 
                 if (osmd.cursor) { osmd.cursor.reset(); osmd.cursor.hide(); }
                 clearHighlights();
+                
+                justSeeked = true; // Resetting means the next play shouldn't advance immediately
                 
                 playPauseBtn.disabled = false; 
                 playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Play</span>';
@@ -906,118 +910,246 @@
                 mobileMixer.append(mVolSection, mHighlightSection, mInstSection, mResetsSection);
             }
 
+            // --- CUSTOM REPEAT LOGIC ---
+            function getUnrolledMeasures(xmlDoc, osmd) {
+                if (!xmlDoc) return Array.from({length: osmd.sheet.SourceMeasures.length}, (_, i) => i);
+
+                const measures = Array.from(xmlDoc.querySelectorAll('part[id="P1"] measure, part[id="P2"] measure'))
+                    .filter(m => m.closest('part').getAttribute('id') === 'P1' || m.closest('part').id === 'P1');
+                    
+                if (!measures || measures.length === 0) return Array.from({length: osmd.sheet.SourceMeasures.length}, (_, i) => i);
+
+                let sequence = [];
+                let repeatStart = 0;
+                let currentPass = 1;
+                let maxPasses = 1;
+
+                // Scan for max passes in the first block
+                for (let i = 0; i < measures.length; i++) {
+                    const endings = measures[i].querySelectorAll('ending');
+                    endings.forEach(e => {
+                        const numAttr = e.getAttribute('number');
+                        if (numAttr) {
+                            const nums = numAttr.split(',').map(n => parseInt(n.trim()));
+                            maxPasses = Math.max(maxPasses, ...nums);
+                        }
+                    });
+                    if (measures[i].querySelector('repeat[direction="backward"]')) {
+                        if (maxPasses === 1) maxPasses = 2; // Default to 2 passes if no endings exist
+                        break;
+                    }
+                }
+
+                let i = 0;
+                let failsafe = 0;
+                while (i < measures.length && failsafe < 5000) {
+                    failsafe++;
+                    const measure = measures[i];
+
+                    // Check for forward repeat block
+                    if (measure.querySelector('repeat[direction="forward"]')) {
+                        repeatStart = i;
+                        currentPass = 1;
+                        maxPasses = 1;
+                        for (let j = i; j < measures.length; j++) {
+                            const endings = measures[j].querySelectorAll('ending');
+                            endings.forEach(e => {
+                                const numAttr = e.getAttribute('number');
+                                if (numAttr) {
+                                    const nums = numAttr.split(',').map(n => parseInt(n.trim()));
+                                    maxPasses = Math.max(maxPasses, ...nums);
+                                }
+                            });
+                            if (measures[j].querySelector('repeat[direction="backward"]')) {
+                                if (maxPasses === 1) maxPasses = 2;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Process Voltas (Endings)
+                    let skip = false;
+                    const endingStart = measure.querySelector('ending[type="start"]');
+                    if (endingStart) {
+                        const numAttr = endingStart.getAttribute('number');
+                        if (numAttr) {
+                            const nums = numAttr.split(',').map(n => parseInt(n.trim()));
+                            if (!nums.includes(currentPass)) skip = true;
+                        }
+                    }
+
+                    if (!skip) {
+                        sequence.push(i);
+                        
+                        // Process Backward Repeats
+                        if (measure.querySelector('repeat[direction="backward"]')) {
+                            if (currentPass < maxPasses) {
+                                currentPass++;
+                                i = repeatStart; // Jump back
+                                continue;
+                            } else {
+                                currentPass = 1; // Section finished, reset logic
+                            }
+                        }
+                    }
+                    i++;
+                }
+                return sequence;
+            }
+
+            function alignCursorTo(targetMidx, forceReset = false) {
+                let currentMidx = osmd.cursor.Iterator.CurrentMeasureIndex;
+                if (!forceReset && currentMidx === targetMidx) return; // Skip if already there
+
+                const cursorElem = osmd.cursor.cursorElement;
+                if (cursorElem) cursorElem.style.display = 'none'; // Prevent DOM lag
+
+                if (currentMidx > targetMidx || forceReset) {
+                    osmd.cursor.reset();
+                }
+
+                while (!osmd.cursor.Iterator.EndReached && osmd.cursor.Iterator.CurrentMeasureIndex < targetMidx) {
+                    osmd.cursor.next();
+                }
+
+                if (cursorElem) cursorElem.style.display = 'block';
+            }
+
             function prepareAudioEvents() {
                 try {
                     Tone.Transport.cancel();
-                    
                     osmd.cursor.show(); 
                     osmd.cursor.reset();
 
                     Tone.Transport.bpm.value = tempoSlider.value;
                     const ppq = Tone.Transport.PPQ * 4;
-                    measureMap = [];
+                    measureMap = []; 
+                    let globalTicks = 0;
 
-                    let maxTick = 0; 
+                    // Fetch the repeat map!
+                    const sequence = getUnrolledMeasures(currentXmlDoc, osmd);
 
-                    let isLoopWrap = false;
-                    Tone.Transport.schedule((time) => {
-                        Tone.Draw.schedule(() => {
-                            if (isLoopWrap) {
-                                osmd.cursor.reset();
-                                isFirstEvent = true;
-                                clearHighlights();
-                                
-                                if (autoscrollToggle.checked && osmd.cursor.cursorElement) {
-                                    osmd.cursor.cursorElement.scrollIntoView({ behavior: 'auto', block: 'center' });
-                                }
-                            }
-                            isLoopWrap = true; 
-                        }, time);
-                    }, 0);
+                    for (let i = 0; i < sequence.length; i++) {
+                        const targetMidx = sequence[i];
+                        
+                        // Detect if this measure is a jump (e.g., a repeat backward or the start of the piece)
+                        const isJump = (i === 0) || (sequence[i] !== sequence[i-1] + 1);
+                        
+                        alignCursorTo(targetMidx, isJump); // Advance parser
 
-                    while (!osmd.cursor.Iterator.EndReached) {
-                        const ticks = Math.round(osmd.cursor.Iterator.currentTimeStamp.RealValue * ppq);
-                        const mIdx = osmd.cursor.Iterator.CurrentMeasureIndex;
-                        if (measureMap[mIdx] === undefined) measureMap[mIdx] = ticks;
+                        if (measureMap[targetMidx] === undefined) {
+                            measureMap[targetMidx] = globalTicks;
+                        }
 
-                        const notes = osmd.cursor.NotesUnderCursor();
-                        const currentTickEvents = {};
+                        const startTicks = Math.round(osmd.cursor.Iterator.currentTimeStamp.RealValue * ppq);
+                        let measureEndTicks = startTicks;
+                        let isFirstNoteOfMeasure = true;
 
-                        notes.forEach(n => {
-                            const durationTicks = Math.round(n.Length.RealValue * ppq);
-                            maxTick = Math.max(maxTick, ticks + durationTicks);
+                        while (!osmd.cursor.Iterator.EndReached && osmd.cursor.Iterator.CurrentMeasureIndex === targetMidx) {
+                            const currentRealTicks = Math.round(osmd.cursor.Iterator.currentTimeStamp.RealValue * ppq);
+                            const localTicks = currentRealTicks - startTicks;
+                            const scheduleTicks = globalTicks + localTicks;
 
-                            if (n.Pitch && !n.isRest()) {
-                                const vKey = getVoiceKey(n);
-                                if (!currentTickEvents[vKey]) currentTickEvents[vKey] = [];
-                                currentTickEvents[vKey].push({ 
-                                    p: Tone.Frequency(n.halfTone + 12, "midi").toNote(), 
-                                    d: durationTicks + "i" 
-                                });
-                            }
-                        });
+                            // Is this the specific note where a jump needs to visually happen?
+                            const scheduleIsJump = isJump && isFirstNoteOfMeasure;
+                            isFirstNoteOfMeasure = false;
 
-                        Tone.Transport.schedule((time) => {
-                            Tone.Draw.schedule(() => {
-                                if (isFirstEvent) isFirstEvent = false; 
-                                else if (!osmd.cursor.Iterator.EndReached) osmd.cursor.next();
-                                
-                                if (autoscrollToggle.checked && osmd.cursor.cursorElement) {
-                                    osmd.cursor.cursorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                }
+                            const notes = osmd.cursor.NotesUnderCursor();
+                            const currentTickEvents = {};
 
-                                clearHighlights();
+                            notes.forEach(n => {
+                                const durationTicks = Math.round(n.Length.RealValue * ppq);
+                                measureEndTicks = Math.max(measureEndTicks, currentRealTicks + durationTicks);
 
-                                if (activeHighlights.size > 0) {
-                                    osmd.cursor.GNotesUnderCursor()?.forEach(gn => {
-                                        const vKey = getVoiceKey(gn.sourceNote);
-                                        if (activeHighlights.has(vKey)) {
-                                            gn.getSVGGElement()?.querySelectorAll("path, rect")?.forEach(shape => {
-                                                if (!shape.dataset.originalStroke) {
-                                                    shape.dataset.originalStroke = shape.style.stroke || shape.getAttribute("stroke") || "";
-                                                    shape.dataset.originalStrokeWidth = shape.style.strokeWidth || shape.getAttribute("stroke-width") || "";
-                                                    shape.dataset.originalStrokeLinejoin = shape.style.strokeLinejoin || shape.getAttribute("stroke-linejoin") || "";
-                                                    shape.dataset.originalPaintOrder = shape.style.paintOrder || shape.getAttribute("paint-order") || "";
-                                                }
-                                                
-                                                shape.style.stroke = "#edae49"; 
-                                                shape.style.strokeWidth = "5px"; 
-                                                shape.style.strokeLinejoin = "round";
-                                                shape.style.paintOrder = "stroke fill"; 
-                                                
-                                                highlightedElements.add(shape);
-                                            });
-                                        }
+                                if (n.Pitch && !n.isRest()) {
+                                    const vKey = getVoiceKey(n);
+                                    if (!currentTickEvents[vKey]) currentTickEvents[vKey] = [];
+                                    currentTickEvents[vKey].push({ 
+                                        p: Tone.Frequency(n.halfTone + 12, "midi").toNote(), 
+                                        d: durationTicks + "i" 
                                     });
                                 }
-                            }, time);
+                            });
 
                             for (let vKey in currentTickEvents) {
                                 currentTickEvents[vKey].forEach(note => {
-                                    synths[vKey]?.triggerAttackRelease(note.p, note.d, time);
+                                    Tone.Transport.schedule((time) => {
+                                        synths[vKey]?.triggerAttackRelease(note.p, note.d, time);
+                                    }, scheduleTicks + "i");
                                 });
                             }
-                        }, ticks + "i");
 
-                        osmd.cursor.next();
+                            // VISUAL SYNCHRONIZATION
+                            Tone.Transport.schedule((time) => {
+                                Tone.Draw.schedule(() => {
+                                    
+                                    // 1. Determine Cursor Action
+                                    if (justSeeked) {
+                                        justSeeked = false; // Do nothing, cursor is already aligned perfectly
+                                    } else if (scheduleIsJump) {
+                                        alignCursorTo(targetMidx, true); // Snap cursor back to the repeat start
+                                    } else {
+                                        osmd.cursor.next(); // Smoothly advance to the next note
+                                    }
+
+                                    // 2. Perform UI Updates
+                                    if (autoscrollToggle.checked && osmd.cursor.cursorElement) {
+                                        osmd.cursor.cursorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                    }
+                                    
+                                    clearHighlights();
+                                    if (activeHighlights.size > 0) {
+                                        osmd.cursor.GNotesUnderCursor()?.forEach(gn => {
+                                            const vKey = getVoiceKey(gn.sourceNote);
+                                            if (activeHighlights.has(vKey)) {
+                                                gn.getSVGGElement()?.querySelectorAll("path, rect")?.forEach(shape => {
+                                                    if (!shape.dataset.originalStroke) {
+                                                        shape.dataset.originalStroke = shape.style.stroke || shape.getAttribute("stroke") || "";
+                                                        shape.dataset.originalStrokeWidth = shape.style.strokeWidth || shape.getAttribute("stroke-width") || "";
+                                                        shape.dataset.originalStrokeLinejoin = shape.style.strokeLinejoin || shape.getAttribute("stroke-linejoin") || "";
+                                                        shape.dataset.originalPaintOrder = shape.style.paintOrder || shape.getAttribute("paint-order") || "";
+                                                    }
+                                                    shape.style.stroke = "#edae49"; 
+                                                    shape.style.strokeWidth = "5px"; 
+                                                    shape.style.strokeLinejoin = "round";
+                                                    shape.style.paintOrder = "stroke fill"; 
+                                                    highlightedElements.add(shape);
+                                                });
+                                            }
+                                        });
+                                    }
+                                }, time);
+                            }, scheduleTicks + "i");
+
+                            osmd.cursor.next(); // Advance parser
+                        }
+
+                        globalTicks += (measureEndTicks - startTicks); 
                     }
 
-                    osmd.cursor.reset(); isFirstEvent = true;
-                    Tone.Transport.scheduleRepeat(t => { if (metronomeToggle.checked) clickSynth.triggerAttackRelease("G5", "64n", t); }, "4n");
+                    justSeeked = true; // Ensure the first playback tick doesn't skip
+                    osmd.cursor.reset();
 
+                    osmd.cursor.reset(); 
+                    
+                    Tone.Transport.scheduleRepeat(t => { if (metronomeToggle.checked) clickSynth.triggerAttackRelease("G5", "64n", t); }, "4n");
                     Tone.Transport.loopStart = 0;
-                    Tone.Transport.loopEnd = maxTick + "i";
+                    Tone.Transport.loopEnd = globalTicks + "i"; 
                     Tone.Transport.loop = loopToggle.checked;
 
+                    // Handle end of playback cleanly
                     Tone.Transport.schedule((time) => {
                         Tone.Draw.schedule(() => {
                             if (!Tone.Transport.loop) {
                                 Tone.Transport.pause();
                                 seekToMeasure(0);
                                 playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Play</span>';
+                            } else {
+                                osmd.cursor.reset();
+                                clearHighlights();
                             }
                         }, time);
-                    }, maxTick + "i");
+                    }, globalTicks + "i");
 
                     return true;
                 } catch (e) {
