@@ -914,86 +914,126 @@
             function getUnrolledMeasures(xmlDoc, osmd) {
                 if (!xmlDoc) return Array.from({length: osmd.sheet.SourceMeasures.length}, (_, i) => i);
 
-                const measures = Array.from(xmlDoc.querySelectorAll('part[id="P1"] measure, part[id="P2"] measure'))
-                    .filter(m => m.closest('part').getAttribute('id') === 'P1' || m.closest('part').id === 'P1');
-                    
-                if (!measures || measures.length === 0) return Array.from({length: osmd.sheet.SourceMeasures.length}, (_, i) => i);
-
+                const firstPart = xmlDoc.querySelector('part[id="P1"]') || xmlDoc.querySelector('part');
+                if (!firstPart) return Array.from({length: osmd.sheet.SourceMeasures.length}, (_, i) => i);
+                
+                const measures = Array.from(firstPart.querySelectorAll('measure'));
                 let sequence = [];
                 let repeatStart = 0;
                 let currentPass = 1;
-                let maxPasses = 1;
+                let activeEndings = null;
 
-                // Scan for max passes in the first block
-                for (let i = 0; i < measures.length; i++) {
-                    const endings = measures[i].querySelectorAll('ending');
-                    endings.forEach(e => {
-                        const numAttr = e.getAttribute('number');
-                        if (numAttr) {
-                            const nums = numAttr.split(',').map(n => parseInt(n.trim()));
-                            maxPasses = Math.max(maxPasses, ...nums);
+                // UPGRADED SCANNER: Looks past the backward repeat to find trailing voltas
+                const calculateMaxPasses = (startIndex) => {
+                    let passes = 1;
+                    let maxLyricVerse = 1;
+                    let foundBackwardRepeat = false;
+
+                    for (let i = startIndex; i < measures.length; i++) {
+                        // If we passed a backward repeat AND we are no longer in a volta block, we can safely stop scanning.
+                        if (foundBackwardRepeat && !measures[i].querySelector('ending')) {
+                            break;
                         }
-                    });
-                    if (measures[i].querySelector('repeat[direction="backward"]')) {
-                        if (maxPasses === 1) maxPasses = 2; // Default to 2 passes if no endings exist
-                        break;
-                    }
-                }
 
+                        // Stop if we hit a brand new repeated section
+                        if (i > startIndex && measures[i].querySelector('repeat[direction="forward"]')) {
+                            break;
+                        }
+
+                        // Check Voltas
+                        const ends = measures[i].querySelectorAll('ending');
+                        ends.forEach(e => {
+                            const numAttr = e.getAttribute('number');
+                            if (numAttr) {
+                                const nums = numAttr.split(',').map(n => parseInt(n.trim()));
+                                passes = Math.max(passes, ...nums); // Grabs the highest number it sees
+                            }
+                        });
+
+                        // Check Lyrics
+                        const lyrics = measures[i].querySelectorAll('lyric');
+                        lyrics.forEach(l => {
+                            const numAttr = l.getAttribute('number');
+                            if (numAttr && !isNaN(parseInt(numAttr))) {
+                                maxLyricVerse = Math.max(maxLyricVerse, parseInt(numAttr));
+                            }
+                        });
+
+                        // Flag when we hit the repeat sign
+                        const backwardRepeat = measures[i].querySelector('repeat[direction="backward"]');
+                        if (backwardRepeat) {
+                            foundBackwardRepeat = true;
+                            const timesAttr = backwardRepeat.getAttribute('times');
+                            if (timesAttr) passes = Math.max(passes, parseInt(timesAttr));
+                        }
+                    }
+
+                    if (passes === 1 && foundBackwardRepeat) passes = Math.max(2, maxLyricVerse);
+                    return passes;
+                };
+
+                let maxPasses = calculateMaxPasses(0);
                 let i = 0;
-                let failsafe = 0;
+                let failsafe = 0; 
+                
                 while (i < measures.length && failsafe < 5000) {
                     failsafe++;
                     const measure = measures[i];
 
-                    // Check for forward repeat block
+                    // 1. Forward Repeat (New Section)
                     if (measure.querySelector('repeat[direction="forward"]')) {
                         repeatStart = i;
                         currentPass = 1;
-                        maxPasses = 1;
-                        for (let j = i; j < measures.length; j++) {
-                            const endings = measures[j].querySelectorAll('ending');
-                            endings.forEach(e => {
-                                const numAttr = e.getAttribute('number');
-                                if (numAttr) {
-                                    const nums = numAttr.split(',').map(n => parseInt(n.trim()));
-                                    maxPasses = Math.max(maxPasses, ...nums);
-                                }
-                            });
-                            if (measures[j].querySelector('repeat[direction="backward"]')) {
-                                if (maxPasses === 1) maxPasses = 2;
-                                break;
-                            }
-                        }
+                        maxPasses = calculateMaxPasses(i);
                     }
 
-                    // Process Voltas (Endings)
-                    let skip = false;
+                    // 2. Open Volta Tag
                     const endingStart = measure.querySelector('ending[type="start"]');
                     if (endingStart) {
                         const numAttr = endingStart.getAttribute('number');
-                        if (numAttr) {
-                            const nums = numAttr.split(',').map(n => parseInt(n.trim()));
-                            if (!nums.includes(currentPass)) skip = true;
-                        }
+                        if (numAttr) activeEndings = numAttr.split(',').map(n => parseInt(n.trim()));
+                    }
+
+                    // 3. Should we skip this measure?
+                    let skip = false;
+                    if (activeEndings !== null && !activeEndings.includes(currentPass)) {
+                        skip = true;
                     }
 
                     if (!skip) {
-                        sequence.push(i);
-                        
-                        // Process Backward Repeats
+                        sequence.push(i); // Add to playlist
+
+                        // 4. Hit a Backward Repeat
                         if (measure.querySelector('repeat[direction="backward"]')) {
                             if (currentPass < maxPasses) {
                                 currentPass++;
-                                i = repeatStart; // Jump back
-                                continue;
+                                i = repeatStart; // JUMP BACK
+                                activeEndings = null;
+                                continue; 
                             } else {
-                                currentPass = 1; // Section finished, reset logic
+                                // Final pass completed via normal repeat (no trailing voltas)
+                                currentPass = 1;
+                                repeatStart = i + 1;
+                                maxPasses = calculateMaxPasses(i + 1);
                             }
                         }
                     }
+
+                    // 5. Close Volta Tag
+                    const endingStop = measure.querySelector('ending[type="stop"], ending[type="discontinue"]');
+                    if (endingStop) {
+                        activeEndings = null;
+                        // If we just successfully played the final ending (e.g. Ending 3 of 3), reset the state for the rest of the song
+                        if (!skip && currentPass === maxPasses) {
+                            currentPass = 1;
+                            repeatStart = i + 1;
+                            maxPasses = calculateMaxPasses(i + 1);
+                        }
+                    }
+
                     i++;
                 }
+                
                 return sequence;
             }
 
