@@ -69,10 +69,10 @@
         <direction-type>
           <metronome parentheses="no">
             <beat-unit>quarter</beat-unit>
-            <per-minute>80</per-minute>
+            <per-minute>88</per-minute>
             </metronome>
           </direction-type>
-        <sound tempo="80"/>
+        <sound tempo="88"/>
         </direction>
       <note>
         <pitch>
@@ -1732,7 +1732,7 @@
       </measure>
     <measure number="16">
       <barline location="left">
-        <ending number="1, 2" type="start">1., 2.</ending>
+        <ending number="1, 2" type="start">1, 2.</ending>
         </barline>
       <note>
         <pitch>
@@ -1942,6 +1942,7 @@
           <line>4</line>
           </clef>
         </attributes>
+      <sound tempo="88"/>
       <note>
         <pitch>
           <step>A</step>
@@ -3168,6 +3169,9 @@
         </note>
       </measure>
     <measure number="16">
+      <barline location="left">
+        <ending number="1, 2" type="start">1, 2.</ending>
+        </barline>
       <note>
         <pitch>
           <step>A</step>
@@ -3247,10 +3251,14 @@
         </note>
       <barline location="right">
         <bar-style>light-heavy</bar-style>
+        <ending number="1, 2" type="stop"/>
         <repeat direction="backward"/>
         </barline>
       </measure>
     <measure number="17">
+      <barline location="left">
+        <ending number="3" type="start">3.</ending>
+        </barline>
       <note>
         <pitch>
           <step>A</step>
@@ -3330,6 +3338,7 @@
         </note>
       <barline location="right">
         <bar-style>light-heavy</bar-style>
+        <ending number="3" type="stop"/>
         </barline>
       </measure>
     </part>
