@@ -488,7 +488,29 @@
             function buildMixerUI() {
                 mixerPanel.innerHTML = '';
 
-                // --- DESKTOP UI CONTAINER ---
+                // --- 1. DETECT SATB FORMAT ---
+                const instruments = osmd.sheet.Instruments;
+                let isSATBFormat = false;
+
+                // Helper to count unique voices in an instrument
+                const getVoiceCount = (instr) => {
+                    let vIds = new Set();
+                    if (instr.Voices) {
+                        const vs = Array.isArray(instr.Voices) ? instr.Voices : Object.values(instr.Voices);
+                        vs.forEach(v => { if(v && v.VoiceId !== undefined) vIds.add(v.VoiceId); });
+                    }
+                    return Math.max(1, vIds.size);
+                };
+
+                // Check if the first two instruments have exactly 2 voices each
+                // This targets the common Treble/Bass staff hymnal layout
+                if (instruments.length >= 2) {
+                    if (getVoiceCount(instruments[0]) === 2 && getVoiceCount(instruments[1]) === 2) {
+                        isSATBFormat = true;
+                    }
+                }
+
+                // --- 2. INITIALIZE UI CONTAINERS ---
                 const desktopMixer = document.createElement('div');
                 desktopMixer.className = 'desktop-mixer';
                 desktopMixer.innerHTML = `
@@ -508,7 +530,6 @@
                     </div>
                 `;
 
-                // --- MOBILE UI CONTAINER ---
                 const mobileMixer = document.createElement('div');
                 mobileMixer.className = 'mobile-mixer';
 
@@ -528,7 +549,6 @@
 
                 mixerPanel.append(desktopMixer, mobileMixer);
 
-                // Dictionary to sync dual-UI elements
                 const syncData = { sliders: [], highlights: [], selects: [] };
                 synths = {}; 
                 activeHighlights.clear();
@@ -552,7 +572,8 @@
                 resetVolBtn.addEventListener('click', doResetVolumes);
                 mResetVolBtn.addEventListener('click', doResetVolumes);
 
-                osmd.sheet.Instruments.forEach(instr => {
+                // --- 3. GENERATE ROWS ---
+                instruments.forEach((instr, instIdx) => {
                     const instrName = instr.Name || `Part ${instr.Id + 1}`;
                     let voiceIds = [];
                     if (instr.Voices) {
@@ -561,27 +582,35 @@
                     }
                     if (voiceIds.length === 0) voiceIds.push(1);
 
-                    [...new Set(voiceIds)].sort().forEach(voiceNum => {
+                    const sortedVoices = [...new Set(voiceIds)].sort((a, b) => a - b);
+
+                    sortedVoices.forEach((voiceNum, vIdx) => {
                         const voiceKey = `${instr.Id}-${voiceNum}`;
-                        const labelName = voiceIds.length > 1 ? `${instrName} (V${voiceNum})` : instrName;
+                        let labelName = voiceIds.length > 1 ? `${instrName} (V${voiceNum})` : instrName;
+
+                        // --- APPLY OVERRIDE ---
+                        if (isSATBFormat) {
+                            if (instIdx === 0) {
+                                labelName = (vIdx === 0) ? "Soprano" : "Alto";
+                            } else if (instIdx === 1) {
+                                labelName = (vIdx === 0) ? "Tenor" : "Bass";
+                            }
+                        }
 
                         synths[voiceKey] = new Tone.PolySynth(Tone.Synth, patchLibrary["Standard Synth"]).toDestination();
                         synths[voiceKey].volume.value = 0; 
 
-                        // --- GENERATE DESKTOP ELEMENTS ---
+                        // Generate Desktop Elements
                         const row = document.createElement('div'); row.className = 'mixer-row';
                         const label = document.createElement('span'); label.textContent = labelName; label.style.fontWeight = "bold";
-
                         const highlightContainer = document.createElement('div'); highlightContainer.className = 'highlight-toggle-container';
                         const highlightCb = document.createElement('input'); highlightCb.type = 'checkbox'; highlightCb.className = 'highlight-toggle';
-
                         const sel = document.createElement('select');
                         Object.keys(patchLibrary).forEach(p => { const o = document.createElement('option'); o.value = p; o.textContent = p; sel.appendChild(o); });
-
                         const volLabel = document.createElement('span'); volLabel.className = 'vol-label'; volLabel.textContent = "0"; 
                         const sld = document.createElement('input'); sld.type = 'range'; sld.min = -30; sld.max = 10; sld.value = 0; sld.className = 'vol-slider';
 
-                        // --- GENERATE MOBILE ELEMENTS ---
+                        // Generate Mobile Elements
                         const mVolRow = document.createElement('div'); mVolRow.className = 'mobile-vol-row';
                         const mVolLabelText = document.createElement('label'); mVolLabelText.textContent = labelName;
                         const mSld = document.createElement('input'); mSld.type = 'range'; mSld.min = -30; mSld.max = 10; mSld.value = 0;
@@ -589,17 +618,10 @@
                         mVolRow.append(mVolLabelText, mSld, mVolLabelNum);
                         mVolSection.appendChild(mVolRow);
 
-                        // --- MOBILE HIGHLIGHTING (Vertical Stack) ---
                         const mHighlightItem = document.createElement('div'); 
                         mHighlightItem.className = 'mobile-highlight-item';
-                        
-                        const mHighlightCb = document.createElement('input'); 
-                        mHighlightCb.type = 'checkbox';
-                        
-                        const mHighlightLabel = document.createElement('span'); 
-                        mHighlightLabel.textContent = labelName;
-                        
-                        // Place checkbox first for better thumb reach
+                        const mHighlightCb = document.createElement('input'); mHighlightCb.type = 'checkbox';
+                        const mHighlightLabel = document.createElement('span'); mHighlightLabel.textContent = labelName;
                         mHighlightItem.append(mHighlightCb, mHighlightLabel); 
                         mHighlightSection.querySelector('.mobile-highlight-row').appendChild(mHighlightItem);
 
@@ -610,7 +632,7 @@
                         mInstRow.append(mInstLabelText, mSel);
                         mInstSection.appendChild(mInstRow);
 
-                        // --- SYNC EVENTS LOGIC ---
+                        // Sync logic
                         syncData.sliders.push(sld, mSld);
                         syncData.highlights.push(highlightCb, mHighlightCb);
                         syncData.selects.push(sel, mSel);
@@ -640,14 +662,12 @@
                             synths[voiceKey].volume.value = num <= -30 ? -Infinity : num;
                             const textStr = num <= -30 ? "MUTE" : `${num > 0 ? '+' : ''}${num}`;
                             volLabel.textContent = textStr; mVolLabelNum.textContent = textStr;
-                            
                             const anyVolChanged = syncData.sliders.some(s => parseInt(s.value) !== 0);
                             resetVolBtn.disabled = !anyVolChanged; mResetVolBtn.disabled = !anyVolChanged;
                         };
                         sld.addEventListener('input', (e) => updateVol(e.target.value));
                         mSld.addEventListener('input', (e) => updateVol(e.target.value));
 
-                        // Append Desktop Elements
                         highlightContainer.appendChild(highlightCb);
                         row.append(label, highlightContainer, sel, sld, volLabel);
                         desktopMixer.appendChild(row);
