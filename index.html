@@ -264,6 +264,9 @@
             let userTempoOverride = null;
 
             let justSeeked = true; // Tracks if the user just clicked Play or Seek
+            let timelineTicks = [];     // Stores the exact audio ticks for every measure in the playlist
+            let timelineMeasures = [];  // Stores the corresponding OSMD measure ID
+            let currentTimelineIdx = 0; // Tracks our current position in the sequence
 
             // --- UPDATED PATCH LIBRARY ---
             const patchLibrary = {
@@ -396,7 +399,7 @@
 
             restartBtn.addEventListener('click', () => {
                 stopPlayback();
-                seekToMeasure(0);
+                seekToTimelineIndex(0);
                 playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Play</span>';
             });
 
@@ -531,31 +534,34 @@
             }
 
             seekBackBtn.addEventListener('click', () => {
-                const currentIdx = osmd.cursor.Iterator.CurrentMeasureIndex;
-                seekToMeasure(currentIdx - 1);
+                seekToTimelineIndex(currentTimelineIdx - 1);
             });
 
             seekForwardBtn.addEventListener('click', () => {
-                const currentIdx = osmd.cursor.Iterator.CurrentMeasureIndex;
-                seekToMeasure(currentIdx + 1);
+                seekToTimelineIndex(currentTimelineIdx + 1);
             });
 
-            function seekToMeasure(targetMeasure) {
-                if (!measureMap || measureMap.length === 0) return;
+            function seekToTimelineIndex(idx) {
+                if (!timelineTicks || timelineTicks.length === 0) return;
                 
                 silenceSynths();
                 Tone.Draw.cancel(); 
                 
-                targetMeasure = Math.max(0, Math.min(measureMap.length - 1, targetMeasure));
-                Tone.Transport.position = (measureMap[targetMeasure] || 0) + "i";
+                // Keep the index within the bounds of our unrolled playlist
+                idx = Math.max(0, Math.min(timelineTicks.length - 1, idx));
+                currentTimelineIdx = idx; 
                 
-                alignCursorTo(targetMeasure, true); // Force visual reset to the measure
+                // Jump the audio engine to the specific ticks for this pass
+                Tone.Transport.position = timelineTicks[idx] + "i";
+                
+                // Jump the visual cursor
+                alignCursorTo(timelineMeasures[idx], true);
                 clearHighlights();
                 
-                justSeeked = true; // Tell the draw loop not to advance on the first note
+                justSeeked = true;
                 
                 if (Tone.Transport.state === 'paused') {
-                    playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Resume</span>';
+                     playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Resume</span>';
                 }
             }
 
@@ -567,7 +573,8 @@
                 if (osmd.cursor) { osmd.cursor.reset(); osmd.cursor.hide(); }
                 clearHighlights();
                 
-                justSeeked = true; // Resetting means the next play shouldn't advance immediately
+                justSeeked = true; 
+                currentTimelineIdx = 0; // Reset our tracker!
                 
                 playPauseBtn.disabled = false; 
                 playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Play</span>';
@@ -1063,23 +1070,24 @@
 
                     Tone.Transport.bpm.value = tempoSlider.value;
                     const ppq = Tone.Transport.PPQ * 4;
-                    measureMap = []; 
                     let globalTicks = 0;
 
                     // Fetch the repeat map!
                     const sequence = getUnrolledMeasures(currentXmlDoc, osmd);
 
+                    timelineTicks = [];
+                    timelineMeasures = [];
+                    currentTimelineIdx = 0;
+
                     for (let i = 0; i < sequence.length; i++) {
                         const targetMidx = sequence[i];
-                        
-                        // Detect if this measure is a jump (e.g., a repeat backward or the start of the piece)
                         const isJump = (i === 0) || (sequence[i] !== sequence[i-1] + 1);
                         
-                        alignCursorTo(targetMidx, isJump); // Advance parser
+                        alignCursorTo(targetMidx, isJump); 
 
-                        if (measureMap[targetMidx] === undefined) {
-                            measureMap[targetMidx] = globalTicks;
-                        }
+                        // SAVE TO OUR NEW TIMELINE ARRAYS
+                        timelineTicks[i] = globalTicks;
+                        timelineMeasures[i] = targetMidx;
 
                         const startTicks = Math.round(osmd.cursor.Iterator.currentTimeStamp.RealValue * ppq);
                         let measureEndTicks = startTicks;
@@ -1090,8 +1098,9 @@
                             const localTicks = currentRealTicks - startTicks;
                             const scheduleTicks = globalTicks + localTicks;
 
-                            // Is this the specific note where a jump needs to visually happen?
-                            const scheduleIsJump = isJump && isFirstNoteOfMeasure;
+                            // Capture the state for the draw loop
+                            const isFirstNote = isFirstNoteOfMeasure;
+                            const scheduleIsJump = isJump && isFirstNote;
                             isFirstNoteOfMeasure = false;
 
                             const notes = osmd.cursor.NotesUnderCursor();
@@ -1119,20 +1128,24 @@
                                 });
                             }
 
-                            // VISUAL SYNCHRONIZATION
                             Tone.Transport.schedule((time) => {
                                 Tone.Draw.schedule(() => {
                                     
-                                    // 1. Determine Cursor Action
-                                    if (justSeeked) {
-                                        justSeeked = false; // Do nothing, cursor is already aligned perfectly
-                                    } else if (scheduleIsJump) {
-                                        alignCursorTo(targetMidx, true); // Snap cursor back to the repeat start
-                                    } else {
-                                        osmd.cursor.next(); // Smoothly advance to the next note
+                                    // 1. Keep our seek buttons informed of where we are!
+                                    if (isFirstNote) {
+                                        currentTimelineIdx = i;
                                     }
 
-                                    // 2. Perform UI Updates
+                                    // 2. Cursor Actions
+                                    if (justSeeked) {
+                                        justSeeked = false; 
+                                    } else if (scheduleIsJump) {
+                                        alignCursorTo(targetMidx, true); 
+                                    } else {
+                                        osmd.cursor.next(); 
+                                    }
+
+                                    // 3. UI Updates
                                     if (autoscrollToggle.checked && osmd.cursor.cursorElement) {
                                         osmd.cursor.cursorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
                                     }
@@ -1161,7 +1174,7 @@
                                 }, time);
                             }, scheduleTicks + "i");
 
-                            osmd.cursor.next(); // Advance parser
+                            osmd.cursor.next(); 
                         }
 
                         globalTicks += (measureEndTicks - startTicks); 
@@ -1182,7 +1195,7 @@
                         Tone.Draw.schedule(() => {
                             if (!Tone.Transport.loop) {
                                 Tone.Transport.pause();
-                                seekToMeasure(0);
+                                seekToTimelineIndex(0); // UPDATE THIS
                                 playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Play</span>';
                             } else {
                                 osmd.cursor.reset();
