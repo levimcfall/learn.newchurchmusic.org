@@ -7,6 +7,7 @@
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     <script src="https://unpkg.com/opensheetmusicdisplay@1.8.8/build/opensheetmusicdisplay.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 10px 20px 20px 20px; background-color: #f5f5f5; }
@@ -28,6 +29,7 @@
         button { padding: 8px 16px; border: none; border-radius: 4px; background: #0066cc; color: white; cursor: pointer; font-weight: bold; transition: 0.2s; white-space: nowrap; }
         button:hover:not(:disabled) { background: #0052a3; }
         button:disabled { background: #cccccc; cursor: not-allowed; }
+        #toggleSettingsBtn { margin-left: auto; }
         .small-btn { padding: 4px 8px; font-size: 12px; background: #555; }
         .small-btn:hover:not(:disabled) { background: #333; }
         
@@ -84,11 +86,16 @@
             .primary-controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; border-bottom: none; }
             
             /* Top Playback Menu */
-            .primary-controls > button:not(#toggleSettingsBtn) { 
-                flex: 1 1 calc(20% - 8px); padding: 12px 4px; font-size: 14px; text-align: center; 
+            .primary-controls > button { 
+                flex: 1 1 0; 
+                min-width: 0; 
+                padding: 12px 0; 
+                font-size: 18px; 
+                margin: 0 !important; 
+                box-sizing: border-box;
             }
             
-            #toggleSettingsBtn { order: 6; flex: 1 1 100%; margin: 5px 0 0 0 !important; }
+            .btn-text { display: none; }
 
             /* Full-width Search Area */
             .search-box { 
@@ -153,15 +160,14 @@
             <div class="search-box">
                 <input type="text" id="hymnSearch" class="text-input" list="hymnDatalist" placeholder="Search number or title...">
                 <datalist id="hymnDatalist"></datalist>
-                <button id="loadHymnBtn">Load Hymn</button>
+                <button id="loadHymnBtn"><i class="fas fa-search"></i></button>
             </div>
 
-            <button id="playBtn" disabled>Play</button>
-            <button id="pauseBtn" disabled>Pause</button>
-            <button id="stopBtn" disabled>Stop</button>
-            <button id="seekBackBtn" disabled>&lt;&lt;&lt;</button>
-            <button id="seekForwardBtn" disabled>&gt;&gt;&gt;</button>
-            <button id="toggleSettingsBtn" style="margin-left: auto;">Hide Settings</button>
+            <button id="playPauseBtn" disabled><i class="fas fa-play"></i><span class="btn-text"> Play</span></button>
+            <button id="restartBtn" disabled><i class="fas fa-backward-step"></i><span class="btn-text"> Restart</span></button>
+            <button id="seekBackBtn" disabled><i class="fas fa-backward"></i></button>
+            <button id="seekForwardBtn" disabled><i class="fas fa-forward"></i></button>
+            <button id="toggleSettingsBtn"><i class="fas fa-sliders-h"></i><span class="btn-text"> Hide Settings</span></button>
         </div>
 
         <div class="settings-panel" id="settingsPanel">
@@ -212,8 +218,8 @@
             const hymnDatalist = document.getElementById('hymnDatalist');
             const loadHymnBtn = document.getElementById('loadHymnBtn');
             
-            const playBtn = document.getElementById('playBtn');
-            const pauseBtn = document.getElementById('pauseBtn');
+            const playPauseBtn = document.getElementById('playPauseBtn');
+            const restartBtn = document.getElementById('restartBtn');
             const stopBtn = document.getElementById('stopBtn');
             const seekBackBtn = document.getElementById('seekBackBtn');
             const seekForwardBtn = document.getElementById('seekForwardBtn');
@@ -350,7 +356,43 @@
             toggleSettingsBtn.addEventListener('click', () => {
                 const isHidden = settingsPanel.classList.toggle('hidden');
                 document.body.classList.toggle('settings-open', !isHidden);
-                toggleSettingsBtn.textContent = isHidden ? 'Show Settings' : 'Hide Settings';
+                toggleSettingsBtn.innerHTML = isHidden 
+                    ? '<i class="fas fa-sliders-h"></i><span class="btn-text"> Show Settings</span>' 
+                    : '<i class="fas fa-sliders-h"></i><span class="btn-text"> Hide Settings</span>';
+            });
+
+            playPauseBtn.addEventListener('click', async () => {
+                if (Tone.Transport.state === 'started') {
+                    // Action: Pause
+                    Tone.Transport.pause(); 
+                    silenceSynths(); 
+                    Tone.Draw.cancel(); 
+                    playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Resume</span>';
+                } 
+                else if (Tone.Transport.state === 'paused') {
+                    // Action: Resume
+                    Tone.Transport.start(); 
+                    playPauseBtn.innerHTML = '<i class="fas fa-pause"></i><span class="btn-text"> Pause</span>';
+                } 
+                else {
+                    // Action: Initial Play
+                    await Tone.start();
+                    Tone.getDestination().volume.value = -12; 
+
+                    if (prepareAudioEvents()) {
+                        Tone.Transport.start("+0.1");
+                        playPauseBtn.innerHTML = '<i class="fas fa-pause"></i><span class="btn-text"> Pause</span>'; 
+                        restartBtn.disabled = false; 
+                        seekBackBtn.disabled = false;
+                        seekForwardBtn.disabled = false;
+                    }
+                }
+            });
+
+            restartBtn.addEventListener('click', () => {
+                stopPlayback();
+                seekToMeasure(0);
+                playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Play</span>';
             });
 
             // Tempo Controls
@@ -474,42 +516,12 @@
                     resetTempoBtn.disabled = (parseInt(targetBpm) === defaultBpm);
 
                     buildMixerUI(); 
-                    playBtn.disabled = false;
+                    playPauseBtn.disabled = false;
                 } catch (error) {
                     console.error("Error processing sheet music:", error);
                     alert("There was an error rendering the XML data.");
                 }
             }
-
-            playBtn.addEventListener('click', async () => {
-                await Tone.start();
-                
-                Tone.getDestination().volume.value = -12; 
-
-                if (prepareAudioEvents()) {
-                    Tone.Transport.start("+0.1");
-                    playBtn.disabled = true; 
-                    pauseBtn.disabled = false; 
-                    stopBtn.disabled = false; 
-                    seekBackBtn.disabled = false;
-                    seekForwardBtn.disabled = false;
-                }
-            });
-
-            pauseBtn.addEventListener('click', () => {
-                if (Tone.Transport.state === 'started') { 
-                    Tone.Transport.pause(); 
-                    silenceSynths(); 
-                    Tone.Draw.cancel(); // <--- NEW: Wipes out pending visual updates
-                    pauseBtn.textContent = 'Resume'; 
-                }
-                else { 
-                    Tone.Transport.start(); 
-                    pauseBtn.textContent = 'Pause'; 
-                }
-            });
-
-            stopBtn.addEventListener('click', stopPlayback);
 
             seekBackBtn.addEventListener('click', () => {
                 const currentIdx = osmd.cursor.Iterator.CurrentMeasureIndex;
@@ -525,7 +537,7 @@
                 if (!measureMap || measureMap.length === 0) return;
                 
                 silenceSynths();
-                Tone.Draw.cancel(); // <--- NEW: Prevents old frame events from jumping the cursor
+                Tone.Draw.cancel(); 
                 
                 targetMeasure = Math.max(0, Math.min(measureMap.length - 1, targetMeasure));
                 Tone.Transport.position = (measureMap[targetMeasure] || 0) + "i";
@@ -538,22 +550,25 @@
                 isFirstEvent = true;
                 clearHighlights();
                 
-                if (Tone.Transport.state === 'paused') pauseBtn.textContent = 'Resume';
+                if (Tone.Transport.state === 'paused') {
+                     playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Resume</span>';
+                }
             }
 
+            // We still need a full stop function to wipe the slate clean when a NEW hymn is loaded
             function stopPlayback() {
                 Tone.Transport.stop(); Tone.Transport.position = 0;
                 silenceSynths();
-                Tone.Draw.cancel(); // <--- NEW: Clears the animation queue
+                Tone.Draw.cancel(); 
                 
                 if (osmd.cursor) { osmd.cursor.reset(); osmd.cursor.hide(); }
                 clearHighlights();
-                playBtn.disabled = false; 
-                pauseBtn.disabled = true; 
-                stopBtn.disabled = true; 
+                
+                playPauseBtn.disabled = false; 
+                playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Play</span>';
+                restartBtn.disabled = true; 
                 seekBackBtn.disabled = true; 
                 seekForwardBtn.disabled = true;
-                pauseBtn.textContent = 'Pause';
             }
 
             function silenceSynths() { Object.values(synths).forEach(s => s.releaseAll()); }
@@ -676,9 +691,9 @@
                     // If it's a sampler and hasn't been downloaded yet, download it ONCE here
                     // to prevent all 4 parts from trying to download it at the same time.
                     if (patchConfig && patchConfig.type === "sampler" && !globalBuffers[newVal]) {
-                        const originalPlayText = playBtn.textContent;
-                        playBtn.textContent = `Downloading ${newVal}...`;
-                        playBtn.disabled = true;
+                        const originalPlayText = playPauseBtn.textContent;
+                        playPauseBtn.textContent = `Downloading ${newVal}...`;
+                        playPauseBtn.disabled = true;
                         
                         await new Promise(resolve => {
                             globalBuffers[newVal] = new Tone.ToneAudioBuffers({
@@ -688,8 +703,8 @@
                             });
                         });
                         
-                        playBtn.textContent = originalPlayText;
-                        playBtn.disabled = false;
+                        playPauseBtn.textContent = originalPlayText;
+                        playPauseBtn.disabled = false;
                     }
                     
                     // Now that we guarantee the files are in memory, switch the dropdowns!
@@ -833,9 +848,9 @@
                             if (patchConfig.type === "sampler") {
                                 
                                 if (!globalBuffers[val]) {
-                                    const originalPlayText = playBtn.textContent;
-                                    playBtn.textContent = `Downloading ${val}...`;
-                                    playBtn.disabled = true;
+                                    const originalPlayText = playPauseBtn.textContent;
+                                    playPauseBtn.textContent = `Downloading ${val}...`;
+                                    playPauseBtn.disabled = true;
                                     
                                     await new Promise(resolve => {
                                         globalBuffers[val] = new Tone.ToneAudioBuffers({
@@ -845,8 +860,8 @@
                                         });
                                     });
                                     
-                                    playBtn.textContent = originalPlayText;
-                                    playBtn.disabled = false;
+                                    playPauseBtn.textContent = originalPlayText;
+                                    playPauseBtn.disabled = false;
                                 }
                                 
                                 // Notice we are now passing BOTH the memory bank and the url dictionary
@@ -996,7 +1011,9 @@
                     Tone.Transport.schedule((time) => {
                         Tone.Draw.schedule(() => {
                             if (!Tone.Transport.loop) {
-                                stopPlayback();
+                                Tone.Transport.pause();
+                                seekToMeasure(0);
+                                playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Play</span>';
                             }
                         }, time);
                     }, maxTick + "i");
