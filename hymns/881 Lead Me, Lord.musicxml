@@ -900,10 +900,14 @@
           </notations>
         </note>
       <note>
-        <rest/>
+        <pitch>
+          <step>D</step>
+          <octave>4</octave>
+          </pitch>
         <duration>2</duration>
         <voice>1</voice>
         <type>quarter</type>
+        <stem>up</stem>
         </note>
       <note>
         <pitch>
@@ -973,7 +977,7 @@
         <stem>down</stem>
         <notations>
           <tied type="start"/>
-          <slur type="start" orientation="over" placement="above" number="1"/>
+          <slur type="start" number="1"/>
           </notations>
         <lyric number="1">
           <syllabic>single</syllabic>
@@ -1026,10 +1030,14 @@
         <stem>up</stem>
         </note>
       <note>
-        <rest/>
+        <pitch>
+          <step>E</step>
+          <octave>4</octave>
+          </pitch>
         <duration>2</duration>
         <voice>1</voice>
         <type>quarter</type>
+        <stem>up</stem>
         </note>
       <backup>
         <duration>8</duration>
