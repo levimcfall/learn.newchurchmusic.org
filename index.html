@@ -1076,7 +1076,6 @@
                     const ppq = Tone.Transport.PPQ * 4;
                     let globalTicks = 0;
 
-                    // Fetch the repeat map!
                     const sequence = getUnrolledMeasures(currentXmlDoc, osmd);
 
                     timelineTicks = [];
@@ -1089,7 +1088,6 @@
                         
                         alignCursorTo(targetMidx, isJump); 
 
-                        // SAVE TO OUR NEW TIMELINE ARRAYS
                         timelineTicks[i] = globalTicks;
                         timelineMeasures[i] = targetMidx;
 
@@ -1102,45 +1100,95 @@
                             const localTicks = currentRealTicks - startTicks;
                             const scheduleTicks = globalTicks + localTicks;
 
-                            // Capture the state for the draw loop
                             const isFirstNote = isFirstNoteOfMeasure;
                             const scheduleIsJump = isJump && isFirstNote;
                             isFirstNoteOfMeasure = false;
 
-                            const notes = osmd.cursor.NotesUnderCursor();
-                            const currentTickEvents = {};
+                            // Grab the GRAPHICAL notes directly so we have access to the SVGs and the underlying source data
+                            const gNotes = osmd.cursor.GNotesUnderCursor();
 
-                            notes.forEach(n => {
-                                const durationTicks = Math.round(n.Length.RealValue * ppq);
-                                measureEndTicks = Math.max(measureEndTicks, currentRealTicks + durationTicks);
+                            gNotes.forEach(gn => {
+                                const n = gn.sourceNote;
+                                const visualDurationTicks = Math.round(n.Length.RealValue * ppq);
+                                measureEndTicks = Math.max(measureEndTicks, currentRealTicks + visualDurationTicks);
 
                                 if (n.Pitch && !n.isRest()) {
                                     const vKey = getVoiceKey(n);
-                                    if (!currentTickEvents[vKey]) currentTickEvents[vKey] = [];
-                                    currentTickEvents[vKey].push({ 
-                                        p: Tone.Frequency(n.halfTone + 12, "midi").toNote(), 
-                                        d: durationTicks + "i" 
-                                    });
+                                    const pitch = Tone.Frequency(n.halfTone + 12, "midi").toNote();
+                                    
+                                    // --- 1. HANDLE TIES ---
+                                    let shouldTriggerAudio = true;
+                                    let audioDurationTicks = visualDurationTicks;
+
+                                    if (n.NoteTie) {
+                                        if (n.NoteTie.StartNote === n) {
+                                            // It's the start of a tie! Add up all lengths in the tie chain
+                                            let totalTieRealValue = 0;
+                                            n.NoteTie.Notes.forEach(tiedNote => {
+                                                totalTieRealValue += tiedNote.Length.RealValue;
+                                            });
+                                            audioDurationTicks = Math.round(totalTieRealValue * ppq);
+                                        } else {
+                                            // It's a middle/end tie note. Silence the audio, the start note is handling it.
+                                            shouldTriggerAudio = false;
+                                        }
+                                    }
+
+                                    // --- 2. SCHEDULE AUDIO ---
+                                    if (shouldTriggerAudio) {
+                                        Tone.Transport.schedule((time) => {
+                                            synths[vKey]?.triggerAttackRelease(pitch, audioDurationTicks + "i", time);
+                                        }, scheduleTicks + "i");
+                                    }
+
+                                    // --- 3. SCHEDULE HIGHLIGHTS (Decoupled from Cursor) ---
+                                    const shapes = gn.getSVGGElement()?.querySelectorAll("path, rect");
+                                    if (shapes && shapes.length > 0) {
+                                        const shapeArray = Array.from(shapes);
+                                        
+                                        // Schedule Turn ON
+                                        Tone.Transport.schedule((time) => {
+                                            Tone.Draw.schedule(() => {
+                                                if (activeHighlights.has(vKey)) {
+                                                    shapeArray.forEach(shape => {
+                                                        if (!shape.dataset.originalStroke) {
+                                                            shape.dataset.originalStroke = shape.style.stroke || shape.getAttribute("stroke") || "";
+                                                            shape.dataset.originalStrokeWidth = shape.style.strokeWidth || shape.getAttribute("stroke-width") || "";
+                                                            shape.dataset.originalStrokeLinejoin = shape.style.strokeLinejoin || shape.getAttribute("stroke-linejoin") || "";
+                                                            shape.dataset.originalPaintOrder = shape.style.paintOrder || shape.getAttribute("paint-order") || "";
+                                                        }
+                                                        shape.style.stroke = "#edae49"; 
+                                                        shape.style.strokeWidth = "5px"; 
+                                                        shape.style.strokeLinejoin = "round";
+                                                        shape.style.paintOrder = "stroke fill"; 
+                                                        highlightedElements.add(shape);
+                                                    });
+                                                }
+                                            }, time);
+                                        }, scheduleTicks + "i");
+
+                                        // Schedule Turn OFF
+                                        // Note: We use visualDurationTicks here so the highlight perfectly matches the printed notehead length, even if the audio sustains longer due to a tie!
+                                        Tone.Transport.schedule((time) => {
+                                            Tone.Draw.schedule(() => {
+                                                shapeArray.forEach(shape => {
+                                                    shape.style.stroke = shape.dataset.originalStroke || "";
+                                                    shape.style.strokeWidth = shape.dataset.originalStrokeWidth || "";
+                                                    shape.style.strokeLinejoin = shape.dataset.originalStrokeLinejoin || "";
+                                                    shape.style.paintOrder = shape.dataset.originalPaintOrder || "";
+                                                    highlightedElements.delete(shape);
+                                                });
+                                            }, time);
+                                        }, (scheduleTicks + visualDurationTicks) + "i");
+                                    }
                                 }
                             });
 
-                            for (let vKey in currentTickEvents) {
-                                currentTickEvents[vKey].forEach(note => {
-                                    Tone.Transport.schedule((time) => {
-                                        synths[vKey]?.triggerAttackRelease(note.p, note.d, time);
-                                    }, scheduleTicks + "i");
-                                });
-                            }
-
+                            // --- 4. SCHEDULE BLUE CURSOR LINE ---
                             Tone.Transport.schedule((time) => {
                                 Tone.Draw.schedule(() => {
-                                    
-                                    // 1. Keep our seek buttons informed of where we are!
-                                    if (isFirstNote) {
-                                        currentTimelineIdx = i;
-                                    }
+                                    if (isFirstNote) currentTimelineIdx = i;
 
-                                    // 2. Cursor Actions
                                     if (justSeeked) {
                                         justSeeked = false; 
                                     } else if (scheduleIsJump) {
@@ -1149,31 +1197,8 @@
                                         osmd.cursor.next(); 
                                     }
 
-                                    // 3. UI Updates
                                     if (autoscrollToggle.checked && osmd.cursor.cursorElement) {
                                         osmd.cursor.cursorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                    }
-                                    
-                                    clearHighlights();
-                                    if (activeHighlights.size > 0) {
-                                        osmd.cursor.GNotesUnderCursor()?.forEach(gn => {
-                                            const vKey = getVoiceKey(gn.sourceNote);
-                                            if (activeHighlights.has(vKey)) {
-                                                gn.getSVGGElement()?.querySelectorAll("path, rect")?.forEach(shape => {
-                                                    if (!shape.dataset.originalStroke) {
-                                                        shape.dataset.originalStroke = shape.style.stroke || shape.getAttribute("stroke") || "";
-                                                        shape.dataset.originalStrokeWidth = shape.style.strokeWidth || shape.getAttribute("stroke-width") || "";
-                                                        shape.dataset.originalStrokeLinejoin = shape.style.strokeLinejoin || shape.getAttribute("stroke-linejoin") || "";
-                                                        shape.dataset.originalPaintOrder = shape.style.paintOrder || shape.getAttribute("paint-order") || "";
-                                                    }
-                                                    shape.style.stroke = "#edae49"; 
-                                                    shape.style.strokeWidth = "5px"; 
-                                                    shape.style.strokeLinejoin = "round";
-                                                    shape.style.paintOrder = "stroke fill"; 
-                                                    highlightedElements.add(shape);
-                                                });
-                                            }
-                                        });
                                     }
                                 }, time);
                             }, scheduleTicks + "i");
@@ -1184,22 +1209,19 @@
                         globalTicks += (measureEndTicks - startTicks); 
                     }
 
-                    justSeeked = true; // Ensure the first playback tick doesn't skip
+                    justSeeked = true; 
                     osmd.cursor.reset();
-
-                    osmd.cursor.reset(); 
                     
                     Tone.Transport.scheduleRepeat(t => { if (metronomeToggle.checked) clickSynth.triggerAttackRelease("G5", "64n", t); }, "4n");
                     Tone.Transport.loopStart = 0;
                     Tone.Transport.loopEnd = globalTicks + "i"; 
                     Tone.Transport.loop = loopToggle.checked;
 
-                    // Handle end of playback cleanly
                     Tone.Transport.schedule((time) => {
                         Tone.Draw.schedule(() => {
                             if (!Tone.Transport.loop) {
                                 Tone.Transport.pause();
-                                seekToTimelineIndex(0); // UPDATE THIS
+                                seekToTimelineIndex(0); 
                                 playPauseBtn.innerHTML = '<i class="fas fa-play"></i><span class="btn-text"> Play</span>';
                             } else {
                                 osmd.cursor.reset();
