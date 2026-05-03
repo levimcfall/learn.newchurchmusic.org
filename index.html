@@ -773,7 +773,9 @@
                     const sortedVoices = [...new Set(voiceIds)].sort((a, b) => a - b);
 
                     sortedVoices.forEach((voiceNum, vIdx) => {
-                        const voiceKey = `${instr.Id}-${voiceNum}`;
+                        const voiceKey = `${instr.Id}-${voiceNum}`; // Audio engine still needs this!
+                        const memoryKey = `track-${instIdx}-${vIdx}`; // STABLE memory key across all songs
+                        
                         let labelName = voiceIds.length > 1 ? `${instrName} (V${voiceNum})` : instrName;
 
                         // --- APPLY OVERRIDE ---
@@ -785,15 +787,15 @@
                             }
                         }
 
-                        // Load memory or set defaults
-                        if (!savedMixerSettings[voiceKey]) {
-                            savedMixerSettings[voiceKey] = { inst: "Synth", vol: 0, highlight: false };
+                        // Load memory or set defaults using the STABLE key
+                        if (!savedMixerSettings[memoryKey]) {
+                            savedMixerSettings[memoryKey] = { inst: "Synth", vol: 0, highlight: false };
                         }
-                        const prevState = savedMixerSettings[voiceKey];
+                        const prevState = savedMixerSettings[memoryKey];
 
                         // (Bug fix: changed "Standard Synth" to "Synth")
                         synths[voiceKey] = new Tone.PolySynth(Tone.Synth, patchLibrary["Synth"]).toDestination();
-                        synths[voiceKey].volume.value = 0; 
+                        synths[voiceKey].volume.value = 0;
 
                         // Generate Desktop Elements
                         const row = document.createElement('div'); row.className = 'mixer-row';
@@ -838,14 +840,14 @@
                             const active = activeHighlights.size > 0;
                             clearHighlightsBtn.disabled = !active; mClearHighlightsBtn.disabled = !active;
                             
-                            savedMixerSettings[voiceKey].highlight = isChecked; // Save State
+                            savedMixerSettings[memoryKey].highlight = isChecked;
                         };
                         highlightCb.addEventListener('change', (e) => updateHighlights(e.target.checked));
                         mHighlightCb.addEventListener('change', (e) => updateHighlights(e.target.checked));
 
                         const updateSelect = async (val) => {
                             sel.value = val; mSel.value = val;
-                            savedMixerSettings[voiceKey].inst = val; // Save State
+                            savedMixerSettings[memoryKey].inst = val;
                             
                             // Safely capture the previous volume, default to 0 if synth doesn't exist
                             const vol = synths[voiceKey]?.volume?.value || 0; 
@@ -901,7 +903,7 @@
                             const anyVolChanged = syncData.sliders.some(s => parseInt(s.value) !== 0);
                             resetVolBtn.disabled = !anyVolChanged; mResetVolBtn.disabled = !anyVolChanged;
                             
-                            savedMixerSettings[voiceKey].vol = val; // Save State
+                            savedMixerSettings[memoryKey].vol = val; // Save State
                         };
                         sld.addEventListener('input', (e) => updateVol(e.target.value));
                         mSld.addEventListener('input', (e) => updateVol(e.target.value));
