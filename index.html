@@ -1212,7 +1212,26 @@
                     justSeeked = true; 
                     osmd.cursor.reset();
                     
-                    Tone.Transport.scheduleRepeat(t => { if (metronomeToggle.checked) clickSynth.triggerAttackRelease("G5", "64n", t); }, "4n");
+                    for (let i = 0; i < timelineTicks.length; i++) {
+                        const measureStartTick = timelineTicks[i];
+                        
+                        // Find the end of this measure (either the start of the next one, or the end of the song)
+                        const measureEndTick = (i < timelineTicks.length - 1) ? timelineTicks[i + 1] : globalTicks;
+                        const measureDuration = measureEndTick - measureStartTick;
+                        
+                        // Schedule a click every quarter note (ppq) for the length of this specific measure
+                        for (let tick = 0; tick < measureDuration; tick += Tone.Transport.PPQ) {
+                            Tone.Transport.schedule((time) => {
+                                if (metronomeToggle.checked) {
+                                    const isDownbeat = (tick === 0);
+                                    const pitch = isDownbeat ? "G5" : "C5"; 
+                                    const velocity = isDownbeat ? 1 : 0.5; 
+                                    
+                                    clickSynth.triggerAttackRelease(pitch, "64n", time, velocity);
+                                }
+                            }, (measureStartTick + tick) + "i");
+                        }
+                    }
                     Tone.Transport.loopStart = 0;
                     Tone.Transport.loopEnd = globalTicks + "i"; 
                     Tone.Transport.loop = loopToggle.checked;
