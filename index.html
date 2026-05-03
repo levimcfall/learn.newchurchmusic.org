@@ -215,6 +215,7 @@
                 { number: 881, title: "Lead Me, Lord", path: "hymns/881 Lead Me, Lord.musicxml" },
                 { number: 952, title: "Brightest and Best", path: "hymns/952 Brightest and Best.musicxml" },
                 { number: 1100, title: "What Shall I Render to the Lord", path: "hymns/1100 What Shall I Render to the Lord.musicxml" },
+                { title: "We Will Serve the Lord (Chinese Lyric)", path: "hymns/We Will Serve the Lord(Chinese Lyric).musicxml" },
             ];
 
             const hymnSearch = document.getElementById('hymnSearch');
@@ -354,7 +355,7 @@
             // --- INITIALIZE UI ---
             hymnCatalog.forEach(hymn => {
                 const option = document.createElement('option');
-                option.value = `${hymn.number} - ${hymn.title}`;
+                option.value = hymn.number != null ? `${hymn.number} - ${hymn.title}` : hymn.title;
                 hymnDatalist.appendChild(option);
             });
 
@@ -447,11 +448,13 @@
                 const query = hymnSearch.value.trim();
                 if (!query) return;
 
-                const match = hymnCatalog.find(h => 
-                    `${h.number} - ${h.title}` === query || 
-                    h.number.toString() === query ||
-                    h.title.toLowerCase() === query.toLowerCase()
-                );
+                const match = hymnCatalog.find(h => {
+                    const dropdownStr = h.number != null ? `${h.number} - ${h.title}` : h.title;
+                    
+                    return dropdownStr === query || 
+                           (h.number != null && h.number.toString() === query) ||
+                           h.title.toLowerCase() === query.toLowerCase();
+                });
 
                 if (!match) {
                     alert("Hymn not found in catalog. Please check the spelling or number.");
@@ -477,7 +480,7 @@
                     currentXmlDoc = parser.parseFromString(xmlContent, "text/xml"); // SAVE TO GLOBAL
                     
                     if (hymnData) {
-                        const newTitle = `${hymnData.number} ${hymnData.title}`;
+                        const newTitle = hymnData.number != null ? `${hymnData.number} ${hymnData.title}` : hymnData.title;
                         
                         let workTitle = currentXmlDoc.getElementsByTagName("work-title")[0];
                         let movementTitle = currentXmlDoc.getElementsByTagName("movement-title")[0];
